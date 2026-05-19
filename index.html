@@ -1,0 +1,2346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1b26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fleet">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<title>Dispatcher Fleet</title>
+<style>
+  :root {
+    --bg: #1a1b26; --surface: #24283b; --surface2: #292e42; --border: #414868;
+    --text: #c0caf5; --text-dim: #565f89; --accent: #7aa2f7;
+    --green: #9ece6a; --yellow: #e0af68; --red: #f7768e; --cyan: #7dcfff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    background: var(--bg); color: var(--text);
+    padding: 16px; max-width: 600px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;
+  }
+  .card-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .machine-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .machine-dot.ok { background: var(--green); }
+  .machine-dot.warn { background: var(--yellow); }
+  .machine-dot.err { background: var(--red); }
+  .machine-dot.stale { background: var(--text-dim); }
+
+  .row { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; }
+  .row .label { color: var(--text-dim); }
+  .row .value { color: var(--text); }
+  .row .value.success { color: var(--green); }
+  .row .value.error { color: var(--red); }
+  .row .value.warn { color: var(--yellow); }
+  .row .value.accent { color: var(--accent); }
+
+  .tag {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 3px; font-weight: 500;
+  }
+  .tag.ok { background: rgba(158,206,106,0.15); color: var(--green); }
+  .tag.warn { background: rgba(224,175,104,0.12); color: var(--yellow); }
+  .tag.err { background: rgba(247,118,142,0.12); color: var(--red); }
+  .tag.dim { background: var(--surface2); color: var(--text-dim); }
+
+  .error-hint {
+    font-size: 10px; color: var(--text-dim); font-style: italic;
+    margin-top: 4px; padding: 4px 8px;
+    border-left: 2px solid var(--text-dim);
+    word-break: break-word;
+  }
+
+  /* Burn bar — visual gauge for weekly_pct / dispatches_today usage.
+     Color tier matches the underlying gate semantics: <=80% green,
+     80-100% yellow (approaching the floor), >100% red (over). */
+  /* iOS Safari < 14.5 doesn't support flex `gap`; use margin-right on
+     non-last children instead. Same pattern the rest of this file follows. */
+  .burn-bar-wrap {
+    display: flex; align-items: center;
+    font-size: 11px; padding: 3px 0;
+  }
+  .burn-bar-wrap > *:not(:last-child) { margin-right: 8px; }
+  .burn-bar-wrap .label { color: var(--text-dim); flex-shrink: 0; min-width: 100px; }
+  .burn-bar {
+    flex: 1; height: 6px; background: var(--surface2);
+    border-radius: 3px; overflow: hidden; min-width: 60px;
+  }
+  .burn-bar-fill { height: 100%; transition: width 0.3s ease; }
+  .burn-bar-fill.green { background: var(--green); }
+  .burn-bar-fill.yellow { background: var(--yellow); }
+  .burn-bar-fill.red { background: var(--red); }
+  .burn-pct {
+    font-size: 10px; flex-shrink: 0; min-width: 48px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .burn-pct.green { color: var(--green); }
+  .burn-pct.yellow { color: var(--yellow); }
+  .burn-pct.red { color: var(--red); }
+  .burn-pct.dim { color: var(--text-dim); }
+
+  /* Per-machine detail — collapsed by default in Step 3 of the redesign.
+     Wraps the existing .card content in <details>; <summary> is the
+     at-a-glance click target (dot + name), the body (rows + nested
+     diagnostics drawer) is hidden until the operator opens the card.
+     The mini "what's happening" table above already covers the 95% case;
+     these cards are the deep dive. */
+  .machine-collapsed { padding: 0; }
+  .machine-collapsed > summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
+    list-style: none;
+    min-height: 44px;
+    padding: 12px 16px;
+    display: flex; align-items: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .machine-collapsed > summary::-webkit-details-marker { display: none; }
+  .machine-collapsed > summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 8px; display: inline-block;
+    flex-shrink: 0;
+  }
+  .machine-collapsed[open] > summary::before { content: '\25BE'; }
+  .machine-collapsed > summary > .machine-dot { margin-right: 8px; }
+  .machine-collapsed > summary > .ms-name { color: var(--text); }
+  .machine-collapsed > summary > .ms-tail {
+    margin-left: auto; font-size: 10px; font-weight: 400;
+    color: var(--text-dim);
+  }
+  .machine-collapsed > summary > .ms-tail.warn { color: var(--yellow); }
+  .machine-collapsed > summary > .ms-tail.err  { color: var(--red); }
+  .machine-collapsed > .machine-body {
+    padding: 12px 16px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .machines-header {
+    font-size: 10px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    margin: 18px 0 8px;
+  }
+
+  .diag-drawer {
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(192,202,245,0.08);
+  }
+  .diag-drawer summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
+    font-size: 11px; color: var(--accent);
+    list-style: none;
+    min-height: 44px;
+    display: flex; align-items: center;
+  }
+  .diag-drawer summary::-webkit-details-marker { display: none; }
+  .diag-drawer summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 6px; display: inline-block;
+  }
+  .diag-drawer[open] summary::before { content: '\25BE'; }
+  .diag-drawer .field-label {
+    font-size: 10px; color: var(--text-dim);
+    margin-top: 6px; margin-bottom: 2px;
+  }
+  .diag-drawer pre {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px;
+    font-family: inherit; font-size: 10px; color: var(--text);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 200px; overflow: auto;
+  }
+
+  /* Expected-fleet panel (Proposal D). One compact row per machine in the
+     committed roster (config/shared.json:expected_machines) with an active /
+     stale / missing badge. The watchdog answers "is anyone alive?"; this
+     answers "are all the machines we expect actually writing?". */
+  .expected-fleet {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+    font-size: 11px;
+  }
+  .ef-header {
+    font-size: 10px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 0.04em; margin-bottom: 6px;
+  }
+  .ef-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 0; font-size: 11px;
+  }
+  .ef-row .ef-name { color: var(--text); }
+  .ef-row .ef-detail { color: var(--text-dim); font-size: 10px; }
+  .ef-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 3px; font-weight: 500; margin-left: 8px;
+  }
+  .ef-badge.active { background: rgba(158,206,106,0.15); color: var(--green); }
+  .ef-badge.stale { background: rgba(224,175,104,0.12); color: var(--yellow); }
+  .ef-badge.missing { background: rgba(247,118,142,0.12); color: var(--red); }
+
+  /* Auto-digest panel — recent auto/* commits across the fleet. Sources are
+     auto-digest-<machine>.json gist files written each Phase -1.5 dispatch
+     run. Hidden until at least one machine has uploaded a snapshot. */
+  .auto-digest {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+    font-size: 11px;
+  }
+  .ad-header {
+    font-size: 10px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 0.04em; margin-bottom: 8px;
+  }
+  .ad-section {
+    font-size: 10px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin-top: 8px; margin-bottom: 4px;
+  }
+  .ad-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 0; font-size: 11px;
+  }
+  .ad-name { color: var(--text); }
+  .ad-detail { color: var(--text-dim); font-size: 10px; }
+  .ad-count {
+    color: var(--green); font-weight: 600;
+    font-size: 10px; margin-left: 8px;
+  }
+  .ad-count.zero { color: var(--text-dim); font-weight: 400; }
+
+  /* === Step 2 redesign panels === */
+
+  /* Status dot — replaces the platform-rendered emoji set
+     (🟢⚪🟡⚫🔴) used in the banner, what's-happening table,
+     rotation verdict, and attention rows. Theme-matched to the Tokyo Night
+     palette so the dashboard reads consistently across iOS Safari, Windows
+     Chrome, and Android (where the same emoji codepoint renders three
+     different ways). Idle is the only hollow variant — mirrors the original
+     ⚪ "no work yet" semantic; the others are solid fills differentiated
+     by color. */
+  .status-dot {
+    display: inline-block; flex-shrink: 0;
+    width: 10px; height: 10px; border-radius: 50%;
+    vertical-align: middle;
+  }
+  .status-dot.lg { width: 14px; height: 14px; }
+  .status-dot.running { background: var(--green); }
+  .status-dot.idle    { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-dim); }
+  .status-dot.waiting { background: var(--yellow); }
+  .status-dot.asleep  { background: var(--text-dim); }
+  .status-dot.broken  { background: var(--red); }
+
+  /* Banner v2 — operator-facing one-sentence health summary. Replaces the
+     legacy uppercase-state-+-reason-code banner with plain English. */
+  .banner-v2 {
+    display: flex; align-items: center;
+    padding: 14px 16px; border-radius: 8px; margin-bottom: 14px;
+    font-size: 13px; line-height: 1.4;
+  }
+  .banner-v2 > *:not(:last-child) { margin-right: 12px; }
+  .banner-v2.ok    { background: rgba(158,206,106,0.10); border: 1px solid var(--green);  color: var(--green); }
+  .banner-v2.warn  { background: rgba(224,175,104,0.08); border: 1px solid var(--yellow); color: var(--yellow); }
+  .banner-v2.err   { background: rgba(247,118,142,0.10); border: 1px solid var(--red);    color: var(--red); }
+  .banner-v2 .banner-text { flex: 1; min-width: 0; font-weight: 600; word-break: break-word; }
+  .banner-v2 .banner-detail {
+    font-size: 11px; font-weight: 400; color: var(--text-dim);
+    margin-top: 4px; word-break: break-word;
+  }
+
+  /* Generic top section panel — used by what's-happening, today's work,
+     rotation, and attention. Visually similar to .auto-digest / .expected-fleet
+     but with a slightly stronger header so the new sections read as the
+     primary surface. */
+  .top-section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;
+    font-size: 11px;
+  }
+  .ts-header {
+    font-size: 10px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* What's happening — one row per machine. */
+  .wh-row {
+    display: flex; align-items: flex-start;
+    padding: 5px 0; font-size: 11px;
+    border-top: 1px solid rgba(192,202,245,0.05);
+  }
+  .wh-row:first-of-type { border-top: none; }
+  .wh-row > *:not(:last-child) { margin-right: 10px; }
+  .wh-name { color: var(--text); font-weight: 600; min-width: 100px; flex-shrink: 0; }
+  .wh-icon { flex-shrink: 0; padding-top: 3px; }
+  .wh-sentence { color: var(--text-dim); flex: 1; word-break: break-word; line-height: 1.3; }
+  .wh-sentence.broken { color: var(--red); }
+  .wh-sentence.waiting { color: var(--yellow); }
+  .wh-sentence.running { color: var(--green); }
+
+  /* Today's work — 3-row mini-table. */
+  .tw-row {
+    display: flex; align-items: center;
+    padding: 4px 0; font-size: 11px;
+  }
+  .tw-row > *:not(:last-child) { margin-right: 10px; }
+  .tw-row .tw-label { color: var(--text-dim); min-width: 130px; flex-shrink: 0; }
+  .tw-row .tw-value { color: var(--text); flex: 1; word-break: break-word; }
+  .tw-row .tw-value.accent { color: var(--accent); }
+  .tw-bar {
+    flex: 1; height: 6px; background: var(--surface2);
+    border-radius: 3px; overflow: hidden; min-width: 60px;
+    margin-right: 8px;
+  }
+  .tw-bar-fill { height: 100%; transition: width 0.3s ease; background: var(--green); }
+  .tw-bar-fill.yellow { background: var(--yellow); }
+  .tw-bar-fill.red { background: var(--red); }
+  .tw-pr-link {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 3px; background: var(--surface2); color: var(--accent);
+    margin-right: 4px; margin-bottom: 2px; text-decoration: none;
+    font-family: inherit;
+  }
+
+  /* Rotation panel. */
+  .rot-seq {
+    font-size: 11px; color: var(--text); margin-bottom: 4px;
+    line-height: 1.5; word-break: break-word;
+  }
+  .rot-seq .rot-slug {
+    display: inline-block; padding: 1px 5px; border-radius: 3px;
+    background: var(--surface2); margin-right: 4px; margin-bottom: 3px;
+    font-size: 10px; color: var(--text);
+  }
+  .rot-seq .rot-slug.dominant { background: rgba(247,118,142,0.15); color: var(--red); }
+  .rot-verdict {
+    font-size: 11px; font-weight: 600; margin-top: 4px;
+  }
+  .rot-verdict.ok    { color: var(--green); }
+  .rot-verdict.stuck { color: var(--red); }
+
+  /* Attention panel. */
+  .att-row {
+    padding: 6px 0; border-top: 1px solid rgba(192,202,245,0.05);
+  }
+  .att-row:first-of-type { border-top: none; }
+  .att-headline {
+    font-size: 11px; font-weight: 600; line-height: 1.3;
+    word-break: break-word;
+  }
+  .att-headline.warn { color: var(--yellow); }
+  .att-headline.err  { color: var(--red); }
+  .att-detail {
+    font-size: 10px; color: var(--text-dim); font-style: italic;
+    margin-top: 2px; line-height: 1.3; word-break: break-word;
+  }
+
+  .pending-merges { margin-bottom: 14px; }
+  .pm-header {
+    font-size: 11px; font-weight: 600; color: var(--cyan);
+    margin-bottom: 8px; letter-spacing: 0.04em;
+  }
+  .pm-entry {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;
+    font-size: 11px;
+  }
+  .pm-entry.inflight { border-left-color: var(--cyan); }
+  .pm-entry.clean { border-left-color: var(--green); }
+  .pm-entry.suspended { border-left-color: var(--red); }
+  .pm-title {
+    font-weight: 600; margin-bottom: 4px; color: var(--text);
+    word-break: break-all;
+  }
+  .pm-line {
+    font-size: 10px; color: var(--text-dim); padding: 2px 0;
+  }
+  .pm-line.green { color: var(--green); font-weight: 600; }
+  .pm-line.red { color: var(--red); font-weight: 600; }
+  .pm-suspend-callout {
+    margin-top: 6px; padding: 6px 8px;
+    background: rgba(247,118,142,0.06);
+    border-radius: 4px; color: var(--red); font-weight: 600;
+    font-size: 10px;
+  }
+  .pm-entry details { margin-top: 6px; }
+  .pm-entry summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    font-size: 10px; color: var(--accent);
+    list-style: none;
+    min-height: 44px;
+    display: flex; align-items: center;
+    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
+  }
+  .pm-entry summary::-webkit-details-marker { display: none; }
+  .pm-entry summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 6px; display: inline-block;
+  }
+  .pm-entry details[open] summary::before { content: '\25BE'; }
+  .pm-tail-label {
+    font-size: 10px; color: var(--text-dim);
+    margin-top: 6px; margin-bottom: 2px;
+  }
+  .pm-entry pre {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 6px;
+    font-family: inherit; font-size: 10px; color: var(--text);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 150px; overflow: auto;
+  }
+
+  .refresh-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; color: var(--text-dim); margin-bottom: 14px;
+  }
+  .refresh-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--accent); font-size: 10px;
+    padding: 4px 10px; cursor: pointer; font-family: inherit;
+  }
+  .refresh-btn:active { background: var(--surface2); }
+
+  .install-btn {
+    background: var(--accent); border: none; border-radius: 6px;
+    color: var(--bg); font-size: 11px; font-weight: 600;
+    padding: 6px 14px; cursor: pointer; font-family: inherit;
+    display: none;
+  }
+  .install-btn:active { opacity: 0.8; }
+
+  .error-box {
+    background: rgba(247,118,142,0.08); border: 1px solid var(--red);
+    border-radius: 6px; padding: 12px; font-size: 11px; color: var(--red);
+    margin-bottom: 14px; display: none;
+    word-break: break-word;
+  }
+  .error-box small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 10px; }
+  .footer { font-size: 10px; color: var(--text-dim); text-align: center; margin-top: 20px; }
+  .footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>Dispatcher Fleet</h1>
+<div class="subtitle">Budget-aware autonomous dispatch across machines</div>
+
+<div class="refresh-bar">
+  <span id="lastRefresh">Loading...</span>
+  <span>
+    <button class="install-btn" id="installBtn" onclick="installPWA()">Install App</button>
+    <button class="refresh-btn" onclick="refresh()">Refresh</button>
+  </span>
+</div>
+
+<div class="error-box" id="errorBox"></div>
+<!-- Top-of-page operator surfaces (Step 2 redesign). Order is the load-bearing
+     part: banner → what's happening → today's work → rotation → attention.
+     The legacy expectedFleet / autoDigest / pendingMerges panels are kept
+     below as detail-level companions per PLAN-dashboard-redesign.md §rollout
+     step 4. -->
+<div id="healthBanner"></div>
+<div id="whatsHappening" class="top-section" style="display:none"></div>
+<div id="todaysWork" class="top-section" style="display:none"></div>
+<div id="rotationPanel" class="top-section" style="display:none"></div>
+<div id="attentionPanel" class="top-section" style="display:none"></div>
+<div id="expectedFleet" class="expected-fleet" style="display:none"></div>
+<div id="autoDigestPanel" class="auto-digest" style="display:none"></div>
+<div id="stuckPatternsPanel" class="auto-digest" style="display:none"></div>
+<div id="testCountsPanel" class="auto-digest" style="display:none"></div>
+<div id="pendingMerges" class="pending-merges"></div>
+<div id="machines"></div>
+
+<div class="footer">
+  <a href="https://gist.github.com/pmartin1915/655d02ce43b293cacdf333a301b63bbf" target="_blank" rel="noopener noreferrer">Raw gist data</a>
+</div>
+
+<script>
+const GIST_ID = '655d02ce43b293cacdf333a301b63bbf';
+const GIST_URL = `https://api.github.com/gists/${GIST_ID}`;
+const STALE_HOURS = 4;
+
+// Friendly display names for each machine. Keys are the lowercase hostnames
+// that appear in fleet-<hostname>.json. Update these when machines change.
+const MACHINE_NAMES = {
+  'desktop-p7h5aj1': 'Downstairs PC',
+  'desktop-tojgbg2': 'Upstairs PC',
+  'perrypc':         'Main PC',
+  'perryslenovo':    'Laptop',
+};
+
+// Track last successful refresh so we can show staleness when a refresh fails.
+let lastSuccessTs = null;
+
+// === Helpers ===
+
+function esc(s) {
+  // HTML-escape for innerHTML interpolation. Defense-in-depth on gist-sourced data.
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function present(v) {
+  return v != null && v !== '';
+}
+
+function safe(v, fallback) {
+  return v == null || v === '' ? (fallback === undefined ? '—' : fallback) : v;
+}
+
+function formatDuration(ms) {
+  if (ms < 0) return 'just now';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h ago`;
+}
+
+function formatDurationShort(ms) {
+  if (ms < 60000) return '<1m';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
+}
+
+function ago(ts) {
+  if (!ts) return 'never';
+  return formatDuration(Date.now() - new Date(ts).getTime());
+}
+
+function agoMs(tsMs) {
+  if (!tsMs) return 'never';
+  return formatDuration(Date.now() - tsMs);
+}
+
+function untilMs(tsMs) {
+  if (!tsMs) return null;
+  const ms = tsMs - Date.now();
+  if (ms < 0) return `overdue ${formatDurationShort(-ms)}`;
+  return `T+${formatDurationShort(ms)}`;
+}
+
+function isoLocal(ts) {
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleString(); }
+  catch { return String(ts); }
+}
+
+function parseFile(gist, name) {
+  try { return JSON.parse(gist.files[name]?.content ?? '{}'); }
+  catch { return {}; }
+}
+
+// === Refresh + status-aware error handling ===
+
+async function refresh() {
+  const errorBox = document.getElementById('errorBox');
+  errorBox.style.display = 'none';
+  errorBox.innerHTML = '';
+  try {
+    const res = await fetch(GIST_URL, { cache: 'no-store' });
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      err.statusText = res.statusText;
+      const retryAfter = res.headers.get('retry-after');
+      const reset = res.headers.get('x-ratelimit-reset');
+      if (retryAfter) err.retryAfter = parseInt(retryAfter, 10);
+      else if (reset) {
+        const seconds = parseInt(reset, 10) - Math.floor(Date.now() / 1000);
+        if (seconds > 0) err.retryAfter = seconds;
+      }
+      throw err;
+    }
+    const gist = await res.json();
+    render(gist);
+    lastSuccessTs = Date.now();
+    document.getElementById('lastRefresh').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    showRefreshError(errorBox, e);
+  }
+}
+
+function showRefreshError(errorBox, e) {
+  let detail;
+  if (e.status === 403) {
+    detail = 'HTTP 403 Forbidden — check gist visibility / token scope';
+  } else if (e.status === 404) {
+    detail = 'HTTP 404 Not Found — verify gist ID';
+  } else if (e.status === 429) {
+    detail = 'HTTP 429 Too Many Requests — rate limited';
+    if (e.retryAfter) detail += `; retry after ${e.retryAfter}s`;
+  } else if (e.status >= 500) {
+    detail = `HTTP ${e.status}${e.statusText ? ' ' + e.statusText : ''} — GitHub API issue, retry shortly`;
+  } else if (e.status) {
+    detail = `HTTP ${e.status}${e.statusText ? ' ' + e.statusText : ''}`;
+  } else {
+    detail = `Network error: ${e.message || 'unknown'}`;
+  }
+  // Build via DOM (textContent) to avoid injection from exception messages.
+  errorBox.innerHTML = '';
+  const strong = document.createElement('strong');
+  strong.textContent = 'Refresh failed';
+  errorBox.appendChild(strong);
+  errorBox.appendChild(document.createElement('br'));
+  errorBox.appendChild(document.createTextNode(detail));
+  if (lastSuccessTs) {
+    const small = document.createElement('small');
+    small.textContent = `Last success: ${agoMs(lastSuccessTs)}`;
+    errorBox.appendChild(small);
+  }
+  errorBox.style.display = 'block';
+}
+
+// === Phase-specific error hints ===
+
+function errorHint(reason, detail) {
+  if (!present(reason)) return null;
+  const r = String(reason);
+  const combined = (r + ' ' + (detail || '')).toLowerCase();
+  if (combined.includes('quota_exhausted')) {
+    return 'Gemini daily quota hit. Will retry after free-tier reset.';
+  }
+  if (r === 'selector-failed') return 'Check GEMINI_API_KEY env / quota status.';
+  if (r === 'worker-failed') return 'Worker phase. See "Phase" in Diagnostics for the gate.';
+  if (r === 'verify-commit-failed') return 'Tests or typecheck failed in the project worktree.';
+  if (r === 'gist-write-failed') return 'Status gist write failed. Check GIST_AUTH_TOKEN scope.';
+  if (r === 'dispatch-locked') return 'Another machine is dispatching. Self-resolves in <15min.';
+  return null;
+}
+
+// reasonToSentence — translate a dispatcher skip-reason code into operator
+// copy. Codes are emitted by scripts/lib/gates.mjs and scripts/dispatch.mjs;
+// this is the single mapping table that turns them into plain English on
+// the dashboard. Returns null for unknown codes so callers can fall back
+// to rendering the raw code. The fleet param is unused in v1 but reserved
+// for future enrichment (e.g. derived sentences from estimator state).
+function reasonToSentence(reason, _fleet) {
+  if (!present(reason)) return null;
+  switch (reason) {
+    case 'selector-failed':
+      return "Couldn't pick a task. Selector returned nothing.";
+    case 'daily-quota-reached':
+      return 'Done for the day. Resets at UTC midnight.';
+    case 'user-active':
+      return 'User active recently. Quiet until next idle window.';
+    case 'paused-config':
+      return 'Paused via config. Re-enable in budget.json.';
+    case 'paused-sentinel':
+      return 'Sentinel paused dispatch (likely after repeated errors).';
+    case 'estimator-error':
+      return 'Budget estimator failed. Check canary logs.';
+    case 'activity-gate-error':
+      return 'Activity probe failed. Treating machine as in-use.';
+    case 'dispatch-locked':
+      return 'Another dispatch is already running on this machine.';
+    case 'no-eligible-projects':
+      return 'No project ready for an auto-task right now.';
+    case 'insufficient-history-span':
+      return 'Not enough commit history to estimate burn yet.';
+    default:
+      return null;
+  }
+}
+
+// Burn bar — visual gauge for percent-of-target metrics (weekly burn,
+// daily quota fill). Returns a DOM fragment. Color tier matches the gate
+// semantics: <=80% green, 80-100% yellow, >100% red.
+function buildBurnBar(label, pct, opts = {}) {
+  const wrap = document.createElement('div');
+  wrap.className = 'burn-bar-wrap';
+  const lbl = document.createElement('span');
+  lbl.className = 'label';
+  lbl.textContent = label;
+  wrap.appendChild(lbl);
+
+  const bar = document.createElement('div');
+  bar.className = 'burn-bar';
+  const fill = document.createElement('div');
+  fill.className = 'burn-bar-fill';
+  // Cap visual width at 100% but let the numeric label show the true value.
+  // Negative values (rare; e.g. headroom_pct) clamp to 0.
+  const clamped = Math.max(0, Math.min(100, Number(pct)));
+  fill.style.width = `${clamped}%`;
+  let tier;
+  if (pct > 100) tier = 'red';
+  else if (pct >= (opts.warnAt ?? 80)) tier = 'yellow';
+  else tier = 'green';
+  fill.classList.add(tier);
+  bar.appendChild(fill);
+  wrap.appendChild(bar);
+
+  const pctLabel = document.createElement('span');
+  pctLabel.className = `burn-pct ${tier}`;
+  // Display with one decimal for sub-100 values so 72.9% doesn't read as 73%.
+  // Above 100% drop the decimal — "144%" is more legible than "143.97%".
+  pctLabel.textContent = pct >= 100 ? `${Math.round(pct)}%` : `${Number(pct).toFixed(1)}%`;
+  wrap.appendChild(pctLabel);
+  return wrap;
+}
+
+// Daily-quota counter as a non-bar row (text-only; the cap can be 30+ so a
+// 0-100 bar misrepresents the scale).
+function buildQuotaRow(used, cap) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lbl = document.createElement('span');
+  lbl.className = 'label';
+  lbl.textContent = 'Daily quota';
+  const val = document.createElement('span');
+  val.className = 'value';
+  if (present(cap) && cap > 0) {
+    const ratio = used / cap;
+    val.textContent = `${used}/${cap}`;
+    if (ratio >= 1) val.classList.add('warn');
+    else val.classList.add('accent');
+  } else {
+    val.textContent = String(used);
+    val.classList.add('accent');
+  }
+  row.appendChild(lbl);
+  row.appendChild(val);
+  return row;
+}
+
+// Fleet-aggregate "last successful dispatch" — handles per-host health.json
+// underreporting (last writer wins on the gist when multiple hosts compute
+// from their own logs).
+//
+// MIRRORS scripts/lib/fleet.mjs:aggregateLastDispatch — keep in sync. The
+// dashboard ships as static HTML to GitHub Pages with no build step, so the
+// helper is duplicated rather than imported. Any logic change must land in
+// both files. fleet.test.mjs covers the mjs side; manual smoke against the
+// live gist covers the dashboard side.
+function aggregateLastDispatch(fleetSnaps) {
+  let bestTs = null, bestMachine = null, bestMs = -Infinity;
+  for (const snap of fleetSnaps || []) {
+    const ts = snap?.last_dispatch_ts;
+    if (typeof ts !== 'string') continue;
+    const ms = new Date(ts).getTime();
+    if (!Number.isFinite(ms)) continue;
+    if (ms > bestMs) { bestMs = ms; bestTs = ts; bestMachine = snap?.machine ?? null; }
+  }
+  return { ts: bestTs, machine: bestMachine };
+}
+
+// === Machine state + tags ===
+
+function machineState(fleet) {
+  if (!fleet.last_run_ts) return 'stale';
+  const hrs = (Date.now() - new Date(fleet.last_run_ts).getTime()) / 3600000;
+  if (fleet.consecutive_errors >= 3) return 'err';
+  if (hrs > STALE_HOURS) return 'stale';
+  if (fleet.last_run_outcome === 'skipped' && fleet.last_error_reason) return 'warn';
+  return 'ok';
+}
+
+function outcomeTag(outcome) {
+  if (!outcome) return '<span class="tag dim">none</span>';
+  const cls = outcome === 'success' ? 'ok' : outcome === 'skipped' ? 'dim' : 'err';
+  return `<span class="tag ${cls}">${esc(outcome)}</span>`;
+}
+
+// === Stage taxonomy (Step 2 redesign) ===
+//
+// MIRRORS scripts/lib/stage-constants.mjs — keep in sync. The dashboard ships
+// as static HTML to GitHub Pages with no build step, so the helper is
+// duplicated rather than imported. Same pattern as aggregateLastDispatch
+// above. The Node-side regression test in scripts/lib/__tests__/stage-
+// constants.test.mjs guards the source-of-truth mjs file against drift from
+// dispatch.mjs's emitted phases; this dashboard copy is NOT covered by that
+// test and must be updated by hand whenever STAGES, PHASE_RANGES, or
+// META_PHASES change in the .mjs file.
+const STAGE_LABELS = [
+  { num: 1, label: 'Pre-flight' },
+  { num: 2, label: 'Select' },
+  { num: 3, label: 'Route' },
+  { num: 4, label: 'Worktree' },
+  { num: 5, label: 'Work' },
+  { num: 6, label: 'Verify' },
+  { num: 7, label: 'Commit' },
+  { num: 8, label: 'Push' },
+  { num: 9, label: 'Merge' },
+];
+const PHASE_RANGES_DASHBOARD = {
+  'canary':            [1, 1],
+  'drift-check':       [1, 1],
+  'gate':              [1, 1],
+  'selector':          [2, 2],
+  'router':            [3, 3],
+  'pipeline':          [4, 8],
+  'auto-push':         [8, 8],
+  'post-merge-canary': [9, 9],
+};
+
+// Convert an internal phase string to a stage descriptor. Returns null for
+// meta phases (complete, fatal, lock, etc.) and for unknown input.
+function phaseToStage(phase) {
+  if (!present(phase)) return null;
+  const range = PHASE_RANGES_DASHBOARD[phase];
+  if (!range) return null;
+  const [from, to] = range;
+  if (from === to) {
+    const stage = STAGE_LABELS[from - 1];
+    return { num: stage.num, label: stage.label, isRange: false };
+  }
+  return {
+    num: null,
+    label: `${STAGE_LABELS[from - 1].label} → ${STAGE_LABELS[to - 1].label}`,
+    isRange: true,
+  };
+}
+
+// === Machine status (Step 2 redesign) ===
+//
+// Five operator-facing states for the "What's happening right now" mini-table.
+// These are coarser than machineState() (which is the existing dot-color
+// computation feeding the per-machine cards) — they collapse warn/idle/stale
+// into the more readable {running, idle, waiting, asleep, broken} taxonomy.
+//
+// Causality: the order of checks matters. Errors and total-stale beat
+// everything; user-active beats successful-but-recent because it's the
+// expected reason a machine is quiet.
+function computeMachineStatus(fleet) {
+  const errors = Number(fleet?.consecutive_errors) || 0;
+  const lastRunMs = fleet?.last_run_ts
+    ? new Date(fleet.last_run_ts).getTime()
+    : null;
+  const ageHrs = lastRunMs && Number.isFinite(lastRunMs)
+    ? (Date.now() - lastRunMs) / 3600000
+    : Infinity;
+
+  if (errors >= 3 || ageHrs > 24) return 'broken';
+  if (fleet?.last_run_reason === 'user-active') return 'asleep';
+  if (ageHrs > STALE_HOURS) return 'asleep';
+  if (fleet?.last_run_outcome === 'skipped') return 'waiting';
+  if (fleet?.last_run_outcome === 'success') {
+    return ageHrs * 60 < 10 ? 'running' : 'idle';
+  }
+  return 'idle';
+}
+
+// Build a status dot DOM node — replaces the platform-rendered emoji set
+// (see .status-dot CSS comment). Falls back to 'idle' when the state is
+// missing or unrecognized so the dashboard never renders a bare element.
+function makeStatusDot(state, size) {
+  const known = ['running', 'idle', 'waiting', 'asleep', 'broken'];
+  const variant = known.includes(state) ? state : 'idle';
+  const dot = document.createElement('span');
+  dot.className = `status-dot ${variant}${size === 'lg' ? ' lg' : ''}`;
+  return dot;
+}
+
+// Compose the plain-English sentence shown after each machine name in the
+// "what's happening right now" mini-table. The status param is the value
+// returned by computeMachineStatus().
+function whatsHappeningSentence(fleet, status) {
+  const reason = fleet?.last_run_reason;
+  const lastRun = present(fleet?.last_run_ts) ? ago(fleet.last_run_ts) : null;
+
+  if (status === 'broken') {
+    const errs = Number(fleet?.consecutive_errors) || 0;
+    const phase = phaseToStage(fleet?.last_error_phase);
+    if (errs >= 3 && phase) {
+      return `Errored ${errs}× in a row — last failure at stage ${phase.num ?? phase.label} (${phase.label}).`;
+    }
+    if (errs >= 3) {
+      return `Errored ${errs} cycles in a row. Diagnostics drawer below has the message.`;
+    }
+    return lastRun
+      ? `No heartbeat for ${lastRun.replace(' ago', '')}. Machine probably offline.`
+      : 'No heartbeat ever. Machine has not checked in.';
+  }
+  if (status === 'asleep') {
+    if (reason === 'user-active') {
+      return 'User active recently. Quiet until next idle window.';
+    }
+    return lastRun
+      ? `Last heartbeat ${lastRun}. Probably asleep or scheduled task off.`
+      : 'No recent heartbeat.';
+  }
+  if (status === 'waiting') {
+    const sentence = reasonToSentence(reason, fleet);
+    if (sentence) return `Skipped: ${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
+    return present(reason) ? `Skipped: ${reason}.` : 'Skipped this cycle.';
+  }
+  if (status === 'running') {
+    return lastRun
+      ? `Last cycle ${lastRun} — pushed.`
+      : 'Just shipped a commit.';
+  }
+  // idle
+  return lastRun
+    ? `Last cycle ${lastRun}. Idle until next window.`
+    : 'Idle.';
+}
+
+// === Diagnostics drawer (DOM-built; uses textContent for gist-sourced data) ===
+
+function buildDiagDrawer(fleet) {
+  // Mount only when at least one error/diagnostic field is present.
+  const hasError = present(fleet?.last_error_reason) || present(fleet?.last_error_phase);
+  if (!hasError) return null;
+
+  const details = document.createElement('details');
+  details.className = 'diag-drawer';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Diagnostics';
+  details.appendChild(summary);
+
+  const fields = [
+    ['Phase', fleet.last_error_phase],
+    ['Model', fleet.last_error_model],
+    ['Retries', fleet.last_error_retries],
+    ['When', present(fleet.last_error_ts)
+      ? `${ago(fleet.last_error_ts)} (${isoLocal(fleet.last_error_ts)})`
+      : null],
+    ['Engine', fleet.last_engine],
+    ['Wrapper', present(fleet.wrapper_duration_sec) ? `${fleet.wrapper_duration_sec}s` : null],
+    ['Detail', fleet.last_error_detail],
+  ];
+  for (const [label, value] of fields) {
+    if (!present(value)) continue;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lbl = document.createElement('span');
+    lbl.className = 'label';
+    lbl.textContent = label;
+    const val = document.createElement('span');
+    val.className = 'value';
+    val.textContent = String(value);
+    row.appendChild(lbl);
+    row.appendChild(val);
+    details.appendChild(row);
+  }
+
+  if (present(fleet.last_error_message)) {
+    const lbl = document.createElement('div');
+    lbl.className = 'field-label';
+    lbl.textContent = 'Message';
+    details.appendChild(lbl);
+    const pre = document.createElement('pre');
+    pre.textContent = String(fleet.last_error_message);
+    details.appendChild(pre);
+  }
+
+  return details;
+}
+
+// === Expected-fleet panel (Proposal D) ===
+//
+// Reads fleet-membership.json (written by scripts/membership-check.mjs from
+// GitHub Actions). Renders one row per expected machine with a status badge.
+// Hidden entirely when no membership data is in the gist (graceful during
+// the rollout window before D's first Actions cron tick).
+function renderExpectedFleet(gist) {
+  const container = document.getElementById('expectedFleet');
+  container.innerHTML = '';
+
+  const data = parseFile(gist, 'fleet-membership.json');
+  const verdict = data?.verdict;
+  if (!verdict || (
+      (verdict.active?.length ?? 0) === 0 &&
+      (verdict.stale?.length ?? 0) === 0 &&
+      (verdict.missing?.length ?? 0) === 0)) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const counts = {
+    active: verdict.active?.length ?? 0,
+    stale: verdict.stale?.length ?? 0,
+    missing: verdict.missing?.length ?? 0,
+  };
+  const header = document.createElement('div');
+  header.className = 'ef-header';
+  header.textContent = `EXPECTED FLEET (${counts.active} active, ${counts.stale} stale, ${counts.missing} missing)`;
+  container.appendChild(header);
+
+  // Stable display order: active > stale > missing.
+  const ordered = [
+    ...(verdict.active ?? []),
+    ...(verdict.stale ?? []),
+    ...(verdict.missing ?? []),
+  ];
+
+  for (const m of ordered) {
+    const row = document.createElement('div');
+    row.className = 'ef-row';
+
+    const left = document.createElement('span');
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'ef-name';
+    nameSpan.textContent = m.name || m.node_id || '(unknown)';
+    left.appendChild(nameSpan);
+
+    const right = document.createElement('span');
+    const detail = document.createElement('span');
+    detail.className = 'ef-detail';
+    if (m.status === 'active' || m.status === 'stale') {
+      const ageH = present(m.age_hours) ? `${Number(m.age_hours).toFixed(1)}h` : '?';
+      detail.textContent = `last run ${ageH} ago`;
+    } else if (m.status === 'missing') {
+      detail.textContent = 'no fleet file';
+    } else if (m.status === 'corrupt') {
+      detail.textContent = 'fleet file unparseable';
+    } else if (m.status === 'no-runs') {
+      detail.textContent = 'no last_run_ts yet';
+    }
+    right.appendChild(detail);
+
+    const badge = document.createElement('span');
+    const badgeClass = m.status === 'active' ? 'active'
+      : m.status === 'stale' ? 'stale'
+      : 'missing';
+    badge.className = `ef-badge ${badgeClass}`;
+    badge.textContent = m.status + (m.monitor_only ? '*' : '');
+    right.appendChild(badge);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    container.appendChild(row);
+  }
+}
+
+// === Auto-digest panel ===
+//
+// Reads `auto-digest-<machine>.json` files written each dispatch run
+// (Phase -1.5). Aggregation mirrors aggregateFleetAutoDigest in
+// scripts/lib/auto-digest.mjs — kept in sync by hand because the dashboard
+// has no bundler. Hidden when no snapshots present (graceful rollout).
+function renderAutoDigest(gist) {
+  const container = document.getElementById('autoDigestPanel');
+  container.innerHTML = '';
+
+  const files = Object.keys(gist.files || {}).filter(
+    (f) => /^auto-digest-[a-z0-9-]+\.json$/.test(f)
+  );
+  const snaps = [];
+  for (const f of files) {
+    const data = parseFile(gist, f);
+    if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) continue;
+    snaps.push(data);
+  }
+  if (snaps.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  // Aggregate per-machine + per-project, mirroring aggregateFleetAutoDigest.
+  const byMachine = [];
+  const projectMap = new Map();
+  let totalCommits = 0;
+  const projectSlugs = new Set();
+
+  for (const snap of snaps) {
+    let machineCommits = 0;
+    const projectsDetail = [];
+    for (const p of snap.projects || []) {
+      const total = Number(p.total) || 0;
+      projectsDetail.push({ slug: p.project_slug, total });
+      machineCommits += total;
+      if (total > 0) {
+        projectSlugs.add(p.project_slug);
+        const existing = projectMap.get(p.project_slug) || {
+          slug: p.project_slug, commits: 0, machines: [],
+        };
+        existing.commits += total;
+        existing.machines.push({ machine: snap.machine, count: total });
+        projectMap.set(p.project_slug, existing);
+      }
+    }
+    totalCommits += machineCommits;
+    byMachine.push({
+      machine: snap.machine,
+      computed_at: snap.computed_at,
+      commits: machineCommits,
+      projects_detail: projectsDetail,
+    });
+  }
+  byMachine.sort((a, b) => String(a.machine).localeCompare(String(b.machine)));
+  const byProject = Array.from(projectMap.values()).sort(
+    (a, b) => b.commits - a.commits || a.slug.localeCompare(b.slug)
+  );
+
+  const header = document.createElement('div');
+  header.className = 'ad-header';
+  header.textContent =
+    `AUTO-DIGEST — ${totalCommits} commits / ${projectSlugs.size} projects across ` +
+    `${snaps.length} ${snaps.length === 1 ? 'machine' : 'machines'} (last 24h)`;
+  container.appendChild(header);
+
+  // Per-machine rows
+  const machineSection = document.createElement('div');
+  machineSection.className = 'ad-section';
+  machineSection.textContent = 'By machine';
+  container.appendChild(machineSection);
+
+  for (const m of byMachine) {
+    const row = document.createElement('div');
+    row.className = 'ad-row';
+    const left = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'ad-name';
+    name.textContent = m.machine;
+    left.appendChild(name);
+
+    const top3 = (m.projects_detail || [])
+      .filter((p) => p.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3)
+      .map((p) => `${p.slug}:${p.total}`)
+      .join(', ');
+    if (top3) {
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      detail.textContent = '  ' + top3;
+      left.appendChild(detail);
+    }
+
+    const right = document.createElement('span');
+    const count = document.createElement('span');
+    count.className = `ad-count${m.commits === 0 ? ' zero' : ''}`;
+    count.textContent = `${m.commits} commit${m.commits === 1 ? '' : 's'}`;
+    right.appendChild(count);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    container.appendChild(row);
+  }
+
+  // Per-project rollup (only projects with commits)
+  if (byProject.length > 0) {
+    const projSection = document.createElement('div');
+    projSection.className = 'ad-section';
+    projSection.textContent = 'By project';
+    container.appendChild(projSection);
+
+    for (const p of byProject) {
+      const row = document.createElement('div');
+      row.className = 'ad-row';
+      const left = document.createElement('span');
+      const name = document.createElement('span');
+      name.className = 'ad-name';
+      name.textContent = p.slug;
+      left.appendChild(name);
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      detail.textContent = '  ' + p.machines
+        .map((mm) => `${mm.machine}:${mm.count}`)
+        .join(', ');
+      left.appendChild(detail);
+
+      const right = document.createElement('span');
+      const count = document.createElement('span');
+      count.className = 'ad-count';
+      count.textContent = `${p.commits} commit${p.commits === 1 ? '' : 's'}`;
+      right.appendChild(count);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      container.appendChild(row);
+    }
+  }
+}
+
+// === Stuck-patterns panel ===
+// Reads stuck_patterns from the same auto-digest-<host>.json gist files
+// that the auto-digest panel uses. Surfaces (project, task) pairs whose
+// last N consecutive worker runs all skipped with the same reason —
+// usually a sign the project's opportunistic_tasks list has outgrown its
+// source tree. Mirrors aggregateFleetStuckPatterns in
+// scripts/lib/auto-digest.mjs (kept in sync by hand since the dashboard
+// has no bundler).
+function renderStuckPatterns(gist) {
+  const container = document.getElementById('stuckPatternsPanel');
+  container.innerHTML = '';
+
+  const files = Object.keys(gist.files || {}).filter(
+    (f) => /^auto-digest-[a-z0-9-]+\.json$/.test(f)
+  );
+  const snaps = [];
+  for (const f of files) {
+    const data = parseFile(gist, f);
+    if (!data || typeof data !== 'object') continue;
+    if (!Array.isArray(data.stuck_patterns)) continue;
+    snaps.push(data);
+  }
+  // Hide the panel unless at least one machine reports stuck patterns.
+  // Empty stuck_patterns arrays count as "no signal worth surfacing."
+  const hasSignal = snaps.some((s) => (s.stuck_patterns || []).length > 0);
+  if (!hasSignal) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  // Aggregate per-machine + per-project. Mirrors aggregateFleetStuckPatterns.
+  const byMachine = [];
+  const projectMap = new Map();
+  let totalPatterns = 0;
+  const projectSet = new Set();
+  let machinesWithPatterns = 0;
+
+  for (const snap of snaps) {
+    const patterns = snap.stuck_patterns || [];
+    byMachine.push({
+      machine: snap.machine,
+      computed_at: snap.computed_at,
+      patterns,
+    });
+    if (patterns.length > 0) machinesWithPatterns += 1;
+    for (const p of patterns) {
+      if (!p || typeof p !== 'object' || !p.project) continue;
+      totalPatterns += 1;
+      projectSet.add(p.project);
+      const existing = projectMap.get(p.project) || {
+        slug: p.project, count: 0, machines: [],
+      };
+      existing.count += 1;
+      existing.machines.push({ machine: snap.machine, count: Number(p.count) || 0 });
+      projectMap.set(p.project, existing);
+    }
+  }
+  byMachine.sort((a, b) => String(a.machine).localeCompare(String(b.machine)));
+  const byProject = Array.from(projectMap.values()).sort(
+    (a, b) => b.count - a.count || a.slug.localeCompare(b.slug)
+  );
+
+  const header = document.createElement('div');
+  header.className = 'ad-header';
+  header.textContent =
+    `STUCK SKIP PATTERNS — ${totalPatterns} on ${machinesWithPatterns} ` +
+    `${machinesWithPatterns === 1 ? 'machine' : 'machines'} ` +
+    `(${projectSet.size} project${projectSet.size === 1 ? '' : 's'})`;
+  container.appendChild(header);
+
+  // Per-machine rows: list each pattern as "[project:task] reason ×N".
+  const machineSection = document.createElement('div');
+  machineSection.className = 'ad-section';
+  machineSection.textContent = 'By machine';
+  container.appendChild(machineSection);
+
+  for (const m of byMachine) {
+    if (!m.patterns || m.patterns.length === 0) continue;
+    const row = document.createElement('div');
+    row.className = 'ad-row';
+    const left = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'ad-name';
+    name.textContent = m.machine;
+    left.appendChild(name);
+
+    const top3 = m.patterns
+      .slice()
+      .sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0))
+      .slice(0, 3)
+      .map((p) => `${p.project}:${p.task} ×${p.count}`)
+      .join(', ');
+    if (top3) {
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      detail.textContent = '  ' + top3;
+      left.appendChild(detail);
+    }
+
+    const right = document.createElement('span');
+    const count = document.createElement('span');
+    count.className = 'ad-count';
+    count.textContent = `${m.patterns.length} stuck`;
+    right.appendChild(count);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    container.appendChild(row);
+  }
+
+  // Per-project rollup.
+  if (byProject.length > 0) {
+    const projSection = document.createElement('div');
+    projSection.className = 'ad-section';
+    projSection.textContent = 'By project';
+    container.appendChild(projSection);
+
+    for (const p of byProject) {
+      const row = document.createElement('div');
+      row.className = 'ad-row';
+      const left = document.createElement('span');
+      const name = document.createElement('span');
+      name.className = 'ad-name';
+      name.textContent = p.slug;
+      left.appendChild(name);
+
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      detail.textContent = '  ' + p.machines
+        .map((mm) => `${mm.machine}:${mm.count}`)
+        .join(', ');
+      left.appendChild(detail);
+
+      const right = document.createElement('span');
+      const count = document.createElement('span');
+      count.className = 'ad-count';
+      count.textContent = `${p.count} machine${p.count === 1 ? '' : 's'}`;
+      right.appendChild(count);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      container.appendChild(row);
+    }
+  }
+}
+
+// === Test-counts panel ===
+// Reads test-counts-<host>.json snapshots written by the daily
+// BudgetDispatcher-TestCounts task (scripts/run-test-counts.ps1 ->
+// scripts/test-counts.mjs). Mirrors computeDivergence in
+// scripts/lib/test-counts.mjs (kept in sync by hand since the dashboard
+// has no bundler). When the fleet agrees on a single (pass/fail/skip)
+// tuple at a given HEAD, the panel shows that tuple in a calm line.
+// When machines disagree, divergent rows are highlighted so the operator
+// can see exactly which host has drifted without waiting for the ntfy.
+// Hidden until at least one machine has uploaded a snapshot.
+function renderTestCounts(gist) {
+  const container = document.getElementById('testCountsPanel');
+  container.innerHTML = '';
+
+  const files = Object.keys(gist.files || {}).filter(
+    (f) => /^test-counts-[a-z0-9-]+\.json$/.test(f)
+  );
+  if (files.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  const snaps = [];
+  for (const f of files) {
+    const data = parseFile(gist, f);
+    if (!data || typeof data !== 'object') continue;
+    if (typeof data.machine !== 'string') continue;
+    if (typeof data.head_sha !== 'string') continue;
+    if (typeof data.ts !== 'string') continue;
+    snaps.push(data);
+  }
+  if (snaps.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  // Partition snapshots: fresh vs excluded (stale / run-error).
+  // 48h matches the staleHours default in computeDivergence — kept by
+  // hand because the dashboard has no bundler.
+  const STALE_HOURS = 48;
+  const now = Date.now();
+  const staleCutoff = now - STALE_HOURS * 3_600_000;
+
+  const fresh = [];
+  const excluded = [];
+  for (const s of snaps) {
+    const tsMs = Date.parse(s.ts);
+    if (Number.isNaN(tsMs)) {
+      excluded.push({ machine: s.machine, reason: 'unparseable-ts' });
+      continue;
+    }
+    if (tsMs < staleCutoff) {
+      excluded.push({ machine: s.machine, reason: 'stale', head_sha: s.head_sha, ts: s.ts });
+      continue;
+    }
+    if (s.error) {
+      excluded.push({ machine: s.machine, reason: 'run-error', head_sha: s.head_sha, ts: s.ts });
+      continue;
+    }
+    fresh.push(s);
+  }
+
+  // Pick the SHA to lock on: majority among fresh; ties broken by most
+  // recent ts. Mirrors computeDivergence's selection.
+  let pickSha = null;
+  let onSha = [];
+  let differentSha = [];
+  if (fresh.length > 0) {
+    const shaCounts = new Map();
+    const shaLatestTs = new Map();
+    for (const s of fresh) {
+      shaCounts.set(s.head_sha, (shaCounts.get(s.head_sha) || 0) + 1);
+      const tsMs = Date.parse(s.ts);
+      if (!shaLatestTs.has(s.head_sha) || tsMs > shaLatestTs.get(s.head_sha)) {
+        shaLatestTs.set(s.head_sha, tsMs);
+      }
+    }
+    let pickCount = -1;
+    let pickTs = -1;
+    for (const [sha, count] of shaCounts) {
+      const ts = shaLatestTs.get(sha) || 0;
+      if (count > pickCount || (count === pickCount && ts > pickTs)) {
+        pickSha = sha;
+        pickCount = count;
+        pickTs = ts;
+      }
+    }
+    for (const s of fresh) {
+      if (s.head_sha === pickSha) onSha.push(s);
+      else differentSha.push({ machine: s.machine, head_sha: s.head_sha, ts: s.ts });
+    }
+  }
+
+  // Group on-sha machines by their (pass/fail/skip) tuple. Tiebreak the
+  // reference tuple on (count, pass, -fail, -skip, alphabetic) so a 1:1
+  // split between 1094/0/0 and 1092/2/0 names the clean tuple as the
+  // reference (matches computeDivergence's parseTuple/refScore logic).
+  const tupleOf = (s) => `${Number(s.pass) || 0}/${Number(s.fail) || 0}/${Number(s.skip) || 0}`;
+  const byTuple = new Map();
+  for (const s of onSha) {
+    const t = tupleOf(s);
+    if (!byTuple.has(t)) byTuple.set(t, []);
+    byTuple.get(t).push(s);
+  }
+  const tupleSet = Array.from(byTuple.keys()).sort();
+
+  let referenceTuple = null;
+  let refScore = null;
+  for (const t of tupleSet) {
+    const machineCount = byTuple.get(t).length;
+    const parts = t.split('/').map((x) => Number(x) || 0);
+    const score = [machineCount, parts[0], -parts[1], -parts[2]];
+    if (
+      referenceTuple === null ||
+      score[0] > refScore[0] ||
+      (score[0] === refScore[0] && score[1] > refScore[1]) ||
+      (score[0] === refScore[0] && score[1] === refScore[1] && score[2] > refScore[2]) ||
+      (score[0] === refScore[0] && score[1] === refScore[1] && score[2] === refScore[2] && score[3] > refScore[3]) ||
+      (score[0] === refScore[0] && score[1] === refScore[1] && score[2] === refScore[2] && score[3] === refScore[3] && t < referenceTuple)
+    ) {
+      referenceTuple = t;
+      refScore = score;
+    }
+  }
+
+  const diverged = tupleSet.length > 1;
+
+  // ----- Header -----
+  // When exclusions are present, the header includes both the on-SHA
+  // machine count and the total snapshot count so a 2/5-reporting fleet
+  // doesn't visually masquerade as a 2/2-converged one. The "reporting"
+  // phrasing side-steps subject-verb agreement (e.g., the awkward "1
+  // machine agree") since the noun is now uncountable in the singular.
+  const totalSnapshots = snaps.length;
+  const compareLabel = totalSnapshots === onSha.length
+    ? `${onSha.length} machine${onSha.length === 1 ? '' : 's'} reporting`
+    : `${onSha.length} of ${totalSnapshots} machines reporting`;
+  const header = document.createElement('div');
+  header.className = 'ad-header';
+  if (diverged) {
+    header.textContent =
+      `TEST COUNTS — DIVERGED on ${(pickSha || '').slice(0, 7)} ` +
+      `(${tupleSet.length} tuples across ${compareLabel})`;
+  } else if (referenceTuple) {
+    header.textContent =
+      `TEST COUNTS — ${referenceTuple} on ${(pickSha || '').slice(0, 7)} ` +
+      `(${compareLabel})`;
+  } else {
+    header.textContent = 'TEST COUNTS — no fresh snapshots';
+  }
+  container.appendChild(header);
+
+  // ----- On-SHA machine rows -----
+  if (onSha.length > 0) {
+    const section = document.createElement('div');
+    section.className = 'ad-section';
+    section.textContent = 'By machine';
+    container.appendChild(section);
+
+    const sorted = onSha.slice().sort((a, b) =>
+      String(a.machine).localeCompare(String(b.machine))
+    );
+    for (const s of sorted) {
+      const tuple = tupleOf(s);
+      const isDivergent = tuple !== referenceTuple;
+
+      const row = document.createElement('div');
+      row.className = 'ad-row';
+
+      const left = document.createElement('span');
+      const name = document.createElement('span');
+      name.className = 'ad-name';
+      name.textContent = s.machine;
+      left.appendChild(name);
+
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      const ageMs = now - Date.parse(s.ts);
+      const ageH = ageMs / 3_600_000;
+      const ageLabel = ageH < 1
+        ? `${Math.round(ageMs / 60_000)}m ago`
+        : ageH < 24
+          ? `${Math.round(ageH)}h ago`
+          : `${Math.round(ageH / 24)}d ago`;
+      const totalLabel = `total=${Number(s.total) || 0}`;
+      detail.textContent = `  ${totalLabel}  ${ageLabel}`;
+      left.appendChild(detail);
+
+      const right = document.createElement('span');
+      const count = document.createElement('span');
+      // Reuse .ad-count's accent color for the canonical tuple; mute
+      // it for divergent rows so the eye lands on the count value, not
+      // on a color that says "this is fine."
+      count.className = isDivergent ? 'ad-count zero' : 'ad-count';
+      count.textContent = isDivergent ? `${tuple}  <- divergent` : tuple;
+      right.appendChild(count);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      container.appendChild(row);
+    }
+  }
+
+  // ----- Excluded rollup -----
+  const allExcluded = excluded.concat(
+    differentSha.map((d) => ({
+      machine: d.machine,
+      reason: 'different-sha',
+      head_sha: d.head_sha,
+      ts: d.ts,
+    }))
+  );
+  if (allExcluded.length > 0) {
+    const section = document.createElement('div');
+    section.className = 'ad-section';
+    section.textContent = 'Not in comparison';
+    container.appendChild(section);
+
+    allExcluded.sort((a, b) =>
+      String(a.machine).localeCompare(String(b.machine))
+    );
+    for (const e of allExcluded) {
+      const row = document.createElement('div');
+      row.className = 'ad-row';
+
+      const left = document.createElement('span');
+      const name = document.createElement('span');
+      name.className = 'ad-name';
+      name.textContent = e.machine;
+      left.appendChild(name);
+
+      const detail = document.createElement('span');
+      detail.className = 'ad-detail';
+      const shaPart = e.head_sha ? `sha=${e.head_sha.slice(0, 7)}` : '';
+      detail.textContent = '  ' + [e.reason, shaPart].filter(Boolean).join(' ');
+      left.appendChild(detail);
+
+      row.appendChild(left);
+      container.appendChild(row);
+    }
+  }
+}
+
+// === Pending-merges panel ===
+
+function renderPendingMerges(gist) {
+  const container = document.getElementById('pendingMerges');
+  container.innerHTML = '';
+  const data = parseFile(gist, 'pending-merges.json');
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  if (entries.length === 0) return;
+
+  const inflight = entries.filter(e => e && !e.completed && e.next_deadline_ms != null);
+  const clean = entries.filter(e => e && e.completed && e.outcome === 'replays-clean');
+  const suspended = entries.filter(e => e && e.completed && e.outcome === 'auto-suspended');
+
+  if (inflight.length === 0 && clean.length === 0 && suspended.length === 0) return;
+
+  inflight.sort((a, b) => (a.next_deadline_ms || 0) - (b.next_deadline_ms || 0));
+
+  const header = document.createElement('div');
+  header.className = 'pm-header';
+  header.textContent = `PENDING MERGES (${inflight.length} in flight, ${suspended.length} suspended)`;
+  container.appendChild(header);
+
+  for (const e of inflight) container.appendChild(buildPmEntry(e, 'inflight'));
+  for (const e of suspended) container.appendChild(buildPmEntry(e, 'suspended'));
+  for (const e of clean) container.appendChild(buildPmEntry(e, 'clean'));
+}
+
+function buildPmEntry(entry, kind) {
+  const div = document.createElement('div');
+  div.className = `pm-entry ${kind}`;
+
+  const title = document.createElement('div');
+  title.className = 'pm-title';
+  title.textContent = `${safe(entry?.repo, '?')}#${safe(entry?.pr_number, '?')}`;
+  div.appendChild(title);
+
+  if (kind === 'inflight') {
+    if (present(entry.project_slug)) {
+      const proj = document.createElement('div');
+      proj.className = 'pm-line';
+      proj.textContent = `Project: ${entry.project_slug}`;
+      div.appendChild(proj);
+    }
+    const total = Array.isArray(entry.replay_schedule_ms) ? entry.replay_schedule_ms.length : '?';
+    const done = present(entry.replays_done) ? entry.replays_done : 0;
+    const progress = document.createElement('div');
+    progress.className = 'pm-line';
+    progress.textContent = `Replays: ${done} / ${total}`;
+    div.appendChild(progress);
+    const next = untilMs(entry.next_deadline_ms);
+    if (next) {
+      const deadline = document.createElement('div');
+      deadline.className = 'pm-line';
+      deadline.textContent = `Next: ${next}`;
+      div.appendChild(deadline);
+    }
+    if (present(entry.last_replay_ts_ms)) {
+      const last = document.createElement('div');
+      last.className = 'pm-line';
+      last.textContent = `Last replay: ${agoMs(entry.last_replay_ts_ms)}`;
+      div.appendChild(last);
+    }
+  } else if (kind === 'clean') {
+    const total = Array.isArray(entry.replay_schedule_ms)
+      ? entry.replay_schedule_ms.length
+      : (present(entry.replays_done) ? entry.replays_done : '?');
+    const line = document.createElement('div');
+    line.className = 'pm-line green';
+    line.textContent = `✓ All ${total} replays clean`;
+    div.appendChild(line);
+  } else if (kind === 'suspended') {
+    if (present(entry.project_slug)) {
+      const proj = document.createElement('div');
+      proj.className = 'pm-line';
+      proj.textContent = `Project: ${entry.project_slug}`;
+      div.appendChild(proj);
+    }
+    const fail = document.createElement('div');
+    fail.className = 'pm-line red';
+    const exitCode = present(entry.exit_code) ? `, exit ${entry.exit_code}` : '';
+    fail.textContent = `✗ ${safe(entry.failure_mode, 'unknown')}${exitCode}`;
+    div.appendChild(fail);
+
+    const callout = document.createElement('div');
+    callout.className = 'pm-suspend-callout';
+    callout.textContent = 'auto_push:false set in local.json — manual reset required';
+    div.appendChild(callout);
+
+    const hasStdout = present(entry.stdout_tail);
+    const hasStderr = present(entry.stderr_tail);
+    if (hasStdout || hasStderr) {
+      const det = document.createElement('details');
+      const sum = document.createElement('summary');
+      sum.textContent = 'stdout / stderr tails';
+      det.appendChild(sum);
+      if (hasStdout) {
+        const lbl = document.createElement('div');
+        lbl.className = 'pm-tail-label';
+        lbl.textContent = 'stdout_tail';
+        det.appendChild(lbl);
+        const pre = document.createElement('pre');
+        pre.textContent = String(entry.stdout_tail);
+        det.appendChild(pre);
+      }
+      if (hasStderr) {
+        const lbl = document.createElement('div');
+        lbl.className = 'pm-tail-label';
+        lbl.textContent = 'stderr_tail';
+        det.appendChild(lbl);
+        const pre = document.createElement('pre');
+        pre.textContent = String(entry.stderr_tail);
+        det.appendChild(pre);
+      }
+      div.appendChild(det);
+    }
+  }
+
+  return div;
+}
+
+// === Top-section render functions (Step 2 redesign) ===
+//
+// Each returns nothing; each mounts into a fixed container div by id.
+// Sections that have no data hide their container (display:none) so they
+// drop out of the layout entirely.
+
+// Flatten all auto-digest commits across all machines into a single
+// chronologically-sorted list. Used by the rotation panel and "today's
+// work" auto-commit count. Returns commits sorted newest-first.
+function aggregateAutoDigestCommits(gist) {
+  const out = [];
+  for (const fname of Object.keys(gist.files || {})) {
+    if (!/^auto-digest-[a-z0-9-]+\.json$/.test(fname)) continue;
+    const snap = parseFile(gist, fname);
+    if (!snap || !Array.isArray(snap.projects)) continue;
+    for (const p of snap.projects) {
+      if (!Array.isArray(p?.commits)) continue;
+      for (const c of p.commits) {
+        if (!c?.ts) continue;
+        const ms = new Date(c.ts).getTime();
+        if (!Number.isFinite(ms)) continue;
+        out.push({
+          ts: c.ts, ms,
+          slug: p.project_slug,
+          sha: c.sha,
+          subject: c.subject,
+          machine: snap.machine,
+        });
+      }
+    }
+  }
+  out.sort((a, b) => b.ms - a.ms);
+  return out;
+}
+
+// Banner v2 — one plain-English sentence that answers "is the dispatcher
+// working?". Replaces the legacy uppercase-state-+-reason-code banner.
+// Tier mapping per PLAN-dashboard-redesign.md §Banner.
+function renderBannerV2(gist, fleetSnaps) {
+  const banner = document.getElementById('healthBanner');
+  banner.innerHTML = '';
+
+  // Per-machine status for fleet-wide aggregation.
+  const statuses = fleetSnaps.map(computeMachineStatus);
+  const anyBroken = statuses.includes('broken');
+  const anyWaiting = statuses.includes('waiting');
+  const recentSnaps = fleetSnaps.filter((f) => {
+    if (!f.last_run_ts) return false;
+    const hrs = (Date.now() - new Date(f.last_run_ts).getTime()) / 3600000;
+    return hrs < STALE_HOURS;
+  });
+  const allDoneForDay = recentSnaps.length > 0 && recentSnaps.every((f) =>
+    f.last_run_reason === 'daily-quota-reached' || f.last_run_reason === 'user-active'
+  );
+  // "Fleet has no work to do" — every recent machine returned the same
+  // benign no-eligible-projects skip. Distinct from done-for-the-day: the
+  // budget is fine, the rotation backlog is just empty.
+  const allNoWork = recentSnaps.length > 0 && recentSnaps.every((f) =>
+    f.last_run_reason === 'no-eligible-projects'
+  );
+
+  // Fleet-aggregate "last commit shipped" and counts for the optional
+  // detail line.
+  const fleetAgg = aggregateLastDispatch(fleetSnaps);
+  const checkedIn = recentSnaps.length;
+  const total = fleetSnaps.length;
+
+  // tier drives the banner's color band; dotState picks the leading status
+  // dot (broken/waiting/running) so the visual reads at a glance even with
+  // the headline copy hidden by line-wrap on narrow viewports.
+  let tier, dotState, headline;
+  if (anyBroken) {
+    tier = 'err'; dotState = 'broken';
+    const broken = statuses.filter((s) => s === 'broken').length;
+    headline = broken === 1
+      ? 'Something is wrong on one machine. See attention list below.'
+      : `Something is wrong on ${broken} machines. See attention list below.`;
+  } else if (allDoneForDay) {
+    tier = 'warn'; dotState = 'waiting';
+    headline = 'Done for the day. Resets at UTC midnight.';
+  } else if (allNoWork) {
+    tier = 'warn'; dotState = 'waiting';
+    headline = 'Fleet has no work to do. Rotation backlog may be empty.';
+  } else if (anyWaiting && !statuses.includes('running') && !statuses.includes('idle')) {
+    tier = 'warn'; dotState = 'waiting';
+    headline = 'Fleet is waiting. No machine has run a successful cycle recently.';
+  } else {
+    tier = 'ok'; dotState = 'running';
+    headline = 'Everything is fine.';
+  }
+
+  const div = document.createElement('div');
+  div.className = `banner-v2 ${tier}`;
+
+  div.appendChild(makeStatusDot(dotState, 'lg'));
+
+  const text = document.createElement('div');
+  text.className = 'banner-text';
+  text.textContent = headline;
+
+  // Detail line — only when fleet-aggregate data is available. Keeps the
+  // happy path single-line.
+  const detailParts = [];
+  if (fleetAgg.ts) {
+    const fleetMs = Date.now() - new Date(fleetAgg.ts).getTime();
+    if (Number.isFinite(fleetMs) && fleetMs >= 0) {
+      const machineLabel = MACHINE_NAMES[fleetAgg.machine] || fleetAgg.machine || '?';
+      detailParts.push(`Last commit ${formatDuration(fleetMs)} (${machineLabel})`);
+    }
+  }
+  if (total > 0) {
+    detailParts.push(`${checkedIn} of ${total} machines checked in within ${STALE_HOURS}h`);
+  }
+  if (detailParts.length > 0) {
+    const detail = document.createElement('div');
+    detail.className = 'banner-detail';
+    detail.textContent = detailParts.join(' • ');
+    text.appendChild(detail);
+  }
+
+  div.appendChild(text);
+  banner.appendChild(div);
+}
+
+// "What's happening right now" — mini-table, one row per machine. The
+// load-bearing top section per PLAN. Hidden if no fleet snapshots present.
+function renderWhatsHappening(fleetSnaps) {
+  const container = document.getElementById('whatsHappening');
+  container.innerHTML = '';
+  if (!Array.isArray(fleetSnaps) || fleetSnaps.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = "What's happening right now";
+  container.appendChild(header);
+
+  // Stable display order — keep MACHINE_NAMES order if known, then unknowns
+  // alphabetically. Operators expect their fleet in the same slot every refresh.
+  const knownOrder = Object.keys(MACHINE_NAMES);
+  const sorted = [...fleetSnaps].sort((a, b) => {
+    const ai = knownOrder.indexOf(a.machine || '');
+    const bi = knownOrder.indexOf(b.machine || '');
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return String(a.machine || '').localeCompare(String(b.machine || ''));
+  });
+
+  for (const fleet of sorted) {
+    const row = document.createElement('div');
+    row.className = 'wh-row';
+
+    const rawName = fleet.machine || (fleet.__file || '').replace(/^fleet-/, '').replace(/\.json$/, '');
+    const friendly = MACHINE_NAMES[rawName] || rawName || '(unknown)';
+    const status = computeMachineStatus(fleet);
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'wh-name';
+    nameEl.textContent = friendly;
+    row.appendChild(nameEl);
+
+    const iconEl = document.createElement('span');
+    iconEl.className = 'wh-icon';
+    iconEl.appendChild(makeStatusDot(status));
+    row.appendChild(iconEl);
+
+    const sentenceEl = document.createElement('span');
+    sentenceEl.className = `wh-sentence ${status}`;
+    sentenceEl.textContent = whatsHappeningSentence(fleet, status);
+    row.appendChild(sentenceEl);
+
+    container.appendChild(row);
+  }
+}
+
+// "Today's work" — three numbers: dispatches today vs cap, auto-commits
+// today, pending merges count.
+function renderTodaysWork(gist, fleetSnaps) {
+  const container = document.getElementById('todaysWork');
+  container.innerHTML = '';
+
+  // Sum dispatches across the fleet. dispatches_today is per-machine; the
+  // cap (dispatches_today_max) is a per-machine config but tends to match
+  // across the fleet — we sum both so the ratio still reads correctly when
+  // they don't.
+  let usedSum = 0, capSum = 0, hasCap = false;
+  for (const f of fleetSnaps || []) {
+    if (Number.isFinite(Number(f.dispatches_today))) {
+      usedSum += Number(f.dispatches_today);
+    }
+    if (Number.isFinite(Number(f.dispatches_today_max))) {
+      capSum += Number(f.dispatches_today_max);
+      hasCap = true;
+    }
+  }
+
+  // Auto-commits in last 24h come from the auto-digest payloads (already
+  // 24h-windowed by scripts/lib/auto-digest.mjs).
+  const commits = aggregateAutoDigestCommits(gist);
+  const projectsTouched = new Set(commits.map((c) => c.slug));
+
+  // Pending merges — read for the count + a few links.
+  const pmData = parseFile(gist, 'pending-merges.json');
+  const pmEntries = Array.isArray(pmData?.entries) ? pmData.entries : [];
+  const pmInflight = pmEntries.filter((e) => e && !e.completed && e.next_deadline_ms != null);
+
+  // Hide the section entirely when there's nothing to say (cold start —
+  // before any machine has uploaded today's counters and before the first
+  // auto-digest payload). Otherwise render whichever rows have data.
+  const hasAnyData = usedSum > 0 || commits.length > 0 || pmInflight.length > 0 || hasCap;
+  if (!hasAnyData) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = "Today's work";
+  container.appendChild(header);
+
+  // Row 1: dispatches today vs cap. With a bar when we have a cap.
+  if (hasCap || usedSum > 0) {
+    const row = document.createElement('div');
+    row.className = 'tw-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = 'Dispatches today';
+    row.appendChild(lbl);
+
+    if (hasCap && capSum > 0) {
+      const ratio = Math.min(1, usedSum / capSum);
+      const bar = document.createElement('div');
+      bar.className = 'tw-bar';
+      const fill = document.createElement('div');
+      fill.className = 'tw-bar-fill';
+      if (ratio >= 1) fill.classList.add('red');
+      else if (ratio >= 0.8) fill.classList.add('yellow');
+      fill.style.width = `${ratio * 100}%`;
+      bar.appendChild(fill);
+      row.appendChild(bar);
+    }
+
+    const val = document.createElement('span');
+    val.className = 'tw-value accent';
+    val.textContent = hasCap ? `${usedSum} / ${capSum}` : String(usedSum);
+    row.appendChild(val);
+    container.appendChild(row);
+  }
+
+  // Row 2: auto-commits today.
+  if (commits.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'tw-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = 'Auto-commits';
+    const val = document.createElement('span');
+    val.className = 'tw-value';
+    const projWord = projectsTouched.size === 1 ? 'project' : 'projects';
+    val.textContent = `${commits.length} commits across ${projectsTouched.size} ${projWord}`;
+    row.appendChild(lbl);
+    row.appendChild(val);
+    container.appendChild(row);
+  }
+
+  // Row 3: pending merges (count + up to 3 quick links).
+  if (pmInflight.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'tw-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = 'Auto-merges open';
+    const val = document.createElement('span');
+    val.className = 'tw-value';
+    const word = pmInflight.length === 1 ? 'PR' : 'PRs';
+    val.appendChild(document.createTextNode(`${pmInflight.length} ${word} waiting `));
+    for (const e of pmInflight.slice(0, 3)) {
+      const tag = document.createElement('span');
+      tag.className = 'tw-pr-link';
+      tag.textContent = `${safe(e.repo, '?')}#${safe(e.pr_number, '?')}`;
+      val.appendChild(tag);
+    }
+    row.appendChild(lbl);
+    row.appendChild(val);
+    container.appendChild(row);
+  }
+}
+
+// "Is rotation working?" — derives from auto-digest commit timeline. Hidden
+// until there's enough data (>= 3 commits) for the answer to be meaningful.
+function renderRotation(gist) {
+  const container = document.getElementById('rotationPanel');
+  container.innerHTML = '';
+
+  const commits = aggregateAutoDigestCommits(gist);
+  const WINDOW_SIZE = 10;
+  // Threshold tuning: a project is flagged "stuck" when it exceeds this
+  // fraction of the recent window. 0.6 is intentionally lenient — bursty
+  // commit patterns inside a single dispatch can briefly approach 0.5
+  // without indicating a stuck rotation.
+  const STUCK_THRESHOLD = 0.6;
+  const window_ = commits.slice(0, WINDOW_SIZE);
+  if (window_.length < 3) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = 'Is rotation working?';
+  container.appendChild(header);
+
+  // Count how many times each project shows up in the recent window.
+  const counts = new Map();
+  for (const c of window_) counts.set(c.slug, (counts.get(c.slug) || 0) + 1);
+  const distinct = counts.size;
+  const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const isStuck = dominant && dominant[1] / window_.length > STUCK_THRESHOLD;
+
+  // Sequence (newest → oldest, already sorted by aggregator).
+  const seq = document.createElement('div');
+  seq.className = 'rot-seq';
+  seq.appendChild(document.createTextNode(`Last ${window_.length} commits: `));
+  for (const c of window_) {
+    const slug = document.createElement('span');
+    slug.className = 'rot-slug';
+    if (isStuck && c.slug === dominant[0]) slug.classList.add('dominant');
+    slug.textContent = c.slug;
+    seq.appendChild(slug);
+  }
+  container.appendChild(seq);
+
+  const verdict = document.createElement('div');
+  if (isStuck) {
+    verdict.className = 'rot-verdict stuck';
+    verdict.appendChild(makeStatusDot('broken'));
+    verdict.appendChild(document.createTextNode(
+      ` Stuck — ${dominant[0]} ran ${dominant[1]} of ${window_.length} times. Selector backoff or a project failing every cycle.`
+    ));
+  } else {
+    verdict.className = 'rot-verdict ok';
+    verdict.appendChild(makeStatusDot('running'));
+    verdict.appendChild(document.createTextNode(
+      ` Rotating — ${distinct} distinct ${distinct === 1 ? 'project' : 'projects'} in the last ${window_.length} commits.`
+    ));
+  }
+  container.appendChild(verdict);
+}
+
+// "Things needing your attention" — hides when empty. Sources: stale-from-
+// membership, consecutive_errors >= 3 per machine. Pending-merges age and
+// canary-failure rules are deferred to a future pass — the data shapes for
+// "open since" and "canary failed last cycle" need extra work that doesn't
+// belong in v1.
+function renderAttention(gist, fleetSnaps) {
+  const container = document.getElementById('attentionPanel');
+  container.innerHTML = '';
+
+  const entries = [];
+
+  // Rule A: any machine with >= 3 consecutive errors.
+  for (const f of fleetSnaps || []) {
+    const errs = Number(f?.consecutive_errors) || 0;
+    if (errs < 3) continue;
+    const friendly = MACHINE_NAMES[f.machine] || f.machine || '(unknown)';
+    const phase = phaseToStage(f.last_error_phase);
+    const headline = `${friendly} has errored ${errs} cycles in a row.`;
+    let detail;
+    if (phase) {
+      detail = `Last failure at stage ${phase.num ?? phase.label} (${phase.label}). Open the per-machine card below for the diagnostics drawer.`;
+    } else if (present(f.last_error_reason)) {
+      detail = `Reason: ${f.last_error_reason}. Diagnostics drawer below has the message.`;
+    } else {
+      detail = 'Open the per-machine card below for the diagnostics drawer.';
+    }
+    entries.push({ tier: 'err', headline, detail });
+  }
+
+  // Rule B: stale machines from fleet-membership.json verdict. Both `stale`
+  // (>= 4h since last run) and `missing` (no fleet file) are interesting.
+  const membership = parseFile(gist, 'fleet-membership.json');
+  const verdict = membership?.verdict;
+  if (verdict) {
+    for (const m of verdict.stale || []) {
+      const friendly = MACHINE_NAMES[m.name] || m.name || '(unknown)';
+      const ageH = present(m.age_hours)
+        ? `${Number(m.age_hours).toFixed(1)}h`
+        : 'a while';
+      entries.push({
+        tier: 'warn',
+        headline: `${friendly} hasn't checked in for ${ageH}.`,
+        detail: 'Could be: PC asleep, scheduled task disabled, or canary failing. Open the laptop / PC and check the dispatcher service.',
+      });
+    }
+    for (const m of verdict.missing || []) {
+      if (m.monitor_only) continue;
+      const friendly = MACHINE_NAMES[m.name] || m.name || '(unknown)';
+      entries.push({
+        tier: 'err',
+        headline: `${friendly} has no fleet file at all.`,
+        detail: 'Either it has never run, or the gist write is failing. Check GIST_AUTH_TOKEN scope on that machine.',
+      });
+    }
+  }
+
+  if (entries.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = `Things needing your attention (${entries.length})`;
+  container.appendChild(header);
+
+  for (const e of entries) {
+    const row = document.createElement('div');
+    row.className = 'att-row';
+    const headline = document.createElement('div');
+    headline.className = `att-headline ${e.tier}`;
+    headline.appendChild(makeStatusDot(e.tier === 'err' ? 'broken' : 'waiting'));
+    headline.appendChild(document.createTextNode(' ' + e.headline));
+    row.appendChild(headline);
+    if (e.detail) {
+      const det = document.createElement('div');
+      det.className = 'att-detail';
+      det.textContent = e.detail;
+      row.appendChild(det);
+    }
+    container.appendChild(row);
+  }
+}
+
+// === Render ===
+
+function render(gist) {
+  // Match per-machine fleet snapshots only — fleet-membership.json starts
+  // with the same prefix but is structurally different (it's the membership
+  // verdict written by scripts/membership-check.mjs) and used to slip through
+  // the loose filter, rendering a phantom card. The new top sections iterate
+  // this same list so the regex tightens here, not just at the new call sites.
+  const fleetFiles = Object.keys(gist.files || {}).filter(
+    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && f !== 'fleet-membership.json'
+  );
+  // Pre-parse fleet snapshots once — used by every top section and the
+  // per-machine cards below. Each file is at most a small JSON object; the
+  // cost of double-parsing was negligible but the intermediate is also
+  // handy for fleet-wide aggregations.
+  const fleetSnaps = fleetFiles.map((f) => {
+    const snap = parseFile(gist, f);
+    snap.__file = f;
+    return snap;
+  });
+
+  // === Top sections (Step 2 redesign) ===
+  // Order is the load-bearing part: banner → what's happening → today's
+  // work → rotation → things needing attention. Anything below this comment
+  // is the legacy detail-level panel set, kept verbatim per the plan's
+  // rollout step 4 (still useful, just no longer top-level).
+  renderBannerV2(gist, fleetSnaps);
+  renderWhatsHappening(fleetSnaps);
+  renderTodaysWork(gist, fleetSnaps);
+  renderRotation(gist);
+  renderAttention(gist, fleetSnaps);
+
+  // Expected-fleet panel (Proposal D) — kept as detail-level companion to
+  // the new attention panel; the attention panel surfaces only stale/missing
+  // membership entries that need action, while this panel shows the full
+  // active/stale/missing roster.
+  renderExpectedFleet(gist);
+
+  // Auto-digest panel — fleet-wide auto/* commit activity (last 24h).
+  renderAutoDigest(gist);
+
+  // Stuck-patterns panel — (project, task) pairs the worker has been
+  // skipping for N consecutive cycles. Same gist file as auto-digest.
+  renderStuckPatterns(gist);
+
+  // Test-counts panel — fleet agreement on dispatcher test pass/fail/skip
+  // counts at the current HEAD. Reads test-counts-<host>.json snapshots
+  // written by the daily BudgetDispatcher-TestCounts task. Hidden until
+  // at least one machine has uploaded a snapshot.
+  renderTestCounts(gist);
+
+  // Pending-merges panel
+  renderPendingMerges(gist);
+
+  // Per-machine detail cards (Step 3 of the redesign).
+  // The "what's happening" mini-table above is the at-a-glance summary;
+  // each card here is collapsed by default and expands to the full row set
+  // (project / errors / burn bars / quota / nested diagnostics drawer).
+  // The audit confirmed two voices is the right outcome — the summary is
+  // operator-friendly, the drawer stays terse and operator-flavored.
+  const machinesEl = document.getElementById('machines');
+  machinesEl.innerHTML = '';
+
+  if (fleetSnaps.length > 0) {
+    const machinesHeader = document.createElement('div');
+    machinesHeader.className = 'machines-header';
+    machinesHeader.textContent = `Per-machine detail (${fleetSnaps.length})`;
+    machinesEl.appendChild(machinesHeader);
+  }
+
+  for (const fleet of fleetSnaps) {
+    const f = fleet.__file;
+    const rawName = fleet.machine || f.replace(/^fleet-/, '').replace(/\.json$/, '');
+    const name = MACHINE_NAMES[rawName] || rawName;
+    const state = machineState(fleet);
+
+    const card = document.createElement('details');
+    card.className = 'card machine-collapsed';
+    // Default-open broken machines. The whole point of demoting the cards is
+    // to keep the 95% case quiet, but the operator's #1 task when a machine
+    // breaks is reading the error message — forcing two clicks (expand card,
+    // then expand drawer) at the most urgent moment is the wrong trade.
+    if (state === 'err') card.open = true;
+
+    // Summary = collapsed click target. Keep it minimal: status dot, friendly
+    // name, and a one-word tail mirroring the top-of-page mini-table verdict
+    // (broken / waiting / running / asleep / idle). The tail makes the
+    // collapsed state self-describing without forcing the operator to
+    // expand the card to learn whether anything is wrong.
+    const summary = document.createElement('summary');
+    const dot = document.createElement('span');
+    dot.className = `machine-dot ${state}`;
+    summary.appendChild(dot);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'ms-name';
+    nameSpan.textContent = name;
+    summary.appendChild(nameSpan);
+    const tail = document.createElement('span');
+    const status = computeMachineStatus(fleet);
+    const tailClasses = ['ms-tail'];
+    if (status === 'broken') tailClasses.push('err');
+    else if (status === 'waiting') tailClasses.push('warn');
+    tail.className = tailClasses.join(' ');
+    tail.textContent = status;
+    summary.appendChild(tail);
+    card.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'machine-body';
+
+    let rows = `
+      <div class="row"><span class="label">Last run</span><span class="value">${esc(ago(fleet.last_run_ts))}</span></div>
+      <div class="row"><span class="label">Outcome</span><span class="value">${outcomeTag(fleet.last_run_outcome)}</span></div>`;
+
+    // Skip-reason chip — when last_run was a skip, surface the operator-facing
+    // sentence from reasonToSentence() (the canonical reason → English mapping).
+    // Falls back to the raw code if the reason isn't in the table, so newly
+    // added codes still render something rather than disappearing silently.
+    if (fleet.last_run_outcome === 'skipped' && present(fleet.last_run_reason)) {
+      const sentence = reasonToSentence(fleet.last_run_reason, fleet) || fleet.last_run_reason;
+      rows += `<div class="row"><span class="label">Skip reason</span><span class="value warn">${esc(sentence)}</span></div>`;
+    }
+
+    if (present(fleet.last_project)) {
+      rows += `<div class="row"><span class="label">Project</span><span class="value accent">${esc(fleet.last_project)}</span></div>`;
+      rows += `<div class="row"><span class="label">Task</span><span class="value">${esc(safe(fleet.last_task))}</span></div>`;
+    }
+
+    if (present(fleet.last_dispatch_ts)) {
+      rows += `<div class="row"><span class="label">Last success</span><span class="value success">${esc(ago(fleet.last_dispatch_ts))}</span></div>`;
+    }
+
+    if (Number(fleet.consecutive_errors) > 0) {
+      rows += `<div class="row"><span class="label">Errors</span><span class="value error">${esc(fleet.consecutive_errors)} consecutive</span></div>`;
+    }
+
+    if (present(fleet.last_error_reason) && Number(fleet.consecutive_errors) > 0) {
+      rows += `<div class="row"><span class="label">Error</span><span class="value error">${esc(fleet.last_error_reason)}</span></div>`;
+    }
+
+    // Stale row — explicit text companion to the gray dot, so iPhone glances
+    // get the "this machine hasn't checked in" signal without needing color.
+    if (state === 'stale' && present(fleet.last_run_ts)) {
+      rows += `<div class="row"><span class="label">Stale</span><span class="value warn">no heartbeat in ${esc(ago(fleet.last_run_ts))}</span></div>`;
+    }
+
+    body.innerHTML = rows;
+
+    // Daily-quota counter — append after rows, before burn bars. Only when
+    // we actually have a count (new field; gracefully absent on old gist
+    // files until each machine's wrapper next runs the new fleet.mjs).
+    if (present(fleet.dispatches_today)) {
+      body.appendChild(buildQuotaRow(Number(fleet.dispatches_today), fleet.dispatches_today_max));
+    }
+
+    // Burn bars — weekly first (the floor that gates dispatch), then 30-day
+    // (context for whether the weekly-floor is biting because of a tight
+    // month or just an exam-prep week). Estimator may be absent; gate
+    // gracefully on null.
+    if (present(fleet.weekly_pct) && Number.isFinite(Number(fleet.weekly_pct))) {
+      body.appendChild(buildBurnBar('Weekly burn', Number(fleet.weekly_pct)));
+    }
+    if (present(fleet.monthly_pct) && Number.isFinite(Number(fleet.monthly_pct))) {
+      body.appendChild(buildBurnBar('30-day burn', Number(fleet.monthly_pct)));
+    }
+    // Reset countdown — when the weekly gate is blocking and we know when
+    // the window rolls forward, surface the wait. UTC-anchored so the
+    // number matches the gate's own clock.
+    if (fleet.weekly_gate_passes === false && present(fleet.weekly_hours_until_reset)) {
+      const resetRow = document.createElement('div');
+      resetRow.className = 'row';
+      const lbl = document.createElement('span');
+      lbl.className = 'label';
+      lbl.textContent = 'Weekly resets in';
+      const val = document.createElement('span');
+      val.className = 'value warn';
+      val.textContent = `${Math.round(Number(fleet.weekly_hours_until_reset))}h`;
+      resetRow.appendChild(lbl);
+      resetRow.appendChild(val);
+      body.appendChild(resetRow);
+    }
+
+    // Phase-specific hint (under the Error row), DOM-built for safety
+    const hint = errorHint(fleet.last_error_reason, fleet.last_error_detail);
+    if (hint && Number(fleet.consecutive_errors) > 0) {
+      const hintDiv = document.createElement('div');
+      hintDiv.className = 'error-hint';
+      hintDiv.textContent = hint;
+      body.appendChild(hintDiv);
+    }
+
+    // Diagnostics drawer (nested <details> — terse, operator-flavored).
+    const drawer = buildDiagDrawer(fleet);
+    if (drawer) body.appendChild(drawer);
+
+    card.appendChild(body);
+    machinesEl.appendChild(card);
+  }
+}
+
+// PWA install prompt
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('installBtn').style.display = 'inline-block';
+});
+function installPWA() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(() => {
+    deferredPrompt = null;
+    document.getElementById('installBtn').style.display = 'none';
+  });
+}
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBtn').style.display = 'none';
+});
+
+// Service worker registration
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+// Auto-refresh every 5 minutes
+refresh();
+setInterval(refresh, 300000);
+</script>
+</body>
+</html>
