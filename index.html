@@ -2136,23 +2136,19 @@ function renderAttention(gist, fleetSnaps) {
 // === Render ===
 
 function render(gist) {
-  // Match per-machine fleet snapshots only — fleet-membership.json starts
-  // with the same prefix but is structurally different (it's the membership
-  // verdict written by scripts/membership-check.mjs) and used to slip through
-  // the loose filter, rendering a phantom card. The new top sections iterate
-  // this same list so the regex tightens here, not just at the new call sites.
-  const fleetFiles = Object.keys(gist.files || {}).filter(
-    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && f !== 'fleet-membership.json'
-  );
-  // Pre-parse fleet snapshots once — used by every top section and the
-  // per-machine cards below. Each file is at most a small JSON object; the
-  // cost of double-parsing was negligible but the intermediate is also
-  // handy for fleet-wide aggregations.
-  const fleetSnaps = fleetFiles.map((f) => {
-    const snap = parseFile(gist, f);
-    snap.__file = f;
-    return snap;
-  });
+  // Match per-machine fleet snapshots only. Both fleet-membership.json AND
+  // fleet-membership-alert-state.json share the fleet- prefix but are not
+  // heartbeats (no `machine` field). Filter by shape so any future
+  // top-level fleet-*.json schema is self-protecting; mirrors the same
+  // guard in scripts/remote-status.mjs.
+  const fleetSnaps = Object.keys(gist.files || {})
+    .filter((f) => /^fleet-[a-z0-9-]+\.json$/.test(f))
+    .map((f) => {
+      const snap = parseFile(gist, f);
+      if (snap && typeof snap === 'object') snap.__file = f;
+      return snap;
+    })
+    .filter((snap) => snap && typeof snap.machine === 'string');
 
   // === Top sections (Step 2 redesign) ===
   // Order is the load-bearing part: banner → what's happening → today's
