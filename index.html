@@ -33,7 +33,9 @@
 <style>
   :root {
     --bg: #1a1b26; --surface: #24283b; --surface2: #292e42; --border: #414868;
-    --text: #c0caf5; --text-dim: #565f89; --accent: #7aa2f7;
+    /* --text-dim bumped 2026-05-21 from #565f89 (~3.1:1 on --surface) to
+       #8892b0 (~5.2:1) so dim labels and detail text clear WCAG AA. */
+    --text: #c0caf5; --text-dim: #8892b0; --accent: #7aa2f7;
     --green: #9ece6a; --yellow: #e0af68; --red: #f7768e; --cyan: #7dcfff;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,6 +44,14 @@
     background: var(--bg); color: var(--text);
     padding: 16px; max-width: 600px; margin: 0 auto;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Desktop bump — at >=900px viewport the 600px column leaves the
+     burn-bar and what's-happening rows feeling cramped while a 1080p
+     monitor has plenty of horizontal real estate. Bumping to 760px gives
+     the information-dense panels room to breathe without overshooting
+     into a layout the mobile-first CSS wasn't designed for. */
+  @media (min-width: 900px) {
+    body { max-width: 760px; padding: 24px; }
   }
   h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
   .subtitle { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
@@ -95,7 +105,10 @@
     flex: 1; height: 6px; background: var(--surface2);
     border-radius: 3px; overflow: hidden; min-width: 60px;
   }
-  .burn-bar-fill { height: 100%; transition: width 0.3s ease; }
+  .burn-bar-fill { height: 100%; }
+  @media (prefers-reduced-motion: no-preference) {
+    .burn-bar-fill { transition: width 0.3s ease; }
+  }
   .burn-bar-fill.green { background: var(--green); }
   .burn-bar-fill.yellow { background: var(--yellow); }
   .burn-bar-fill.red { background: var(--red); }
@@ -185,7 +198,7 @@
      answers "are all the machines we expect actually writing?". */
   .expected-fleet {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
     font-size: 11px;
   }
   .ef-header {
@@ -211,7 +224,7 @@
      run. Hidden until at least one machine has uploaded a snapshot. */
   .auto-digest {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
     font-size: 11px;
   }
   .ad-header {
@@ -232,6 +245,7 @@
   .ad-count {
     color: var(--green); font-weight: 600;
     font-size: 10px; margin-left: 8px;
+    font-variant-numeric: tabular-nums;
   }
   .ad-count.zero { color: var(--text-dim); font-weight: 400; }
 
@@ -346,7 +360,15 @@
   /* Kimi gate chip — drops to its own line under the sentence at the
      dashboard's 600px max-width; left-padded to align with where the
      sentence starts (name 100px + 10px gap). */
-  .wh-kimi { flex-basis: 100%; padding-left: 110px; padding-top: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* Kimi gate chip — aligns under the sentence at the dashboard's normal
+     width (name 100px + 10px gap = 110px left indent). On <400px viewports
+     the indent would crowd the chip against the right edge, so we drop the
+     padding and let it sit flush. Removed white-space:nowrap so longer
+     gate strings wrap instead of overflowing the row. */
+  .wh-kimi { flex-basis: 100%; padding-left: 110px; padding-top: 2px; font-variant-numeric: tabular-nums; word-break: break-word; }
+  @media (max-width: 399px) {
+    .wh-kimi { padding-left: 0; }
+  }
   .wh-kimi.green { color: var(--green); }
   .wh-kimi.red { color: var(--red); }
   .wh-kimi.unknown { color: var(--text-dim); }
@@ -365,7 +387,10 @@
     border-radius: 3px; overflow: hidden; min-width: 60px;
     margin-right: 8px;
   }
-  .tw-bar-fill { height: 100%; transition: width 0.3s ease; background: var(--green); }
+  .tw-bar-fill { height: 100%; background: var(--green); }
+  @media (prefers-reduced-motion: no-preference) {
+    .tw-bar-fill { transition: width 0.3s ease; }
+  }
   .tw-bar-fill.yellow { background: var(--yellow); }
   .tw-bar-fill.red { background: var(--red); }
   .tw-pr-link {
@@ -424,7 +449,7 @@
   .pm-entry.suspended { border-left-color: var(--red); }
   .pm-title {
     font-weight: 600; margin-bottom: 4px; color: var(--text);
-    word-break: break-all;
+    word-break: break-word; overflow-wrap: anywhere;
   }
   .pm-line {
     font-size: 10px; color: var(--text-dim); padding: 2px 0;
@@ -475,6 +500,19 @@
   }
   .refresh-btn:active { background: var(--surface2); }
 
+  /* Keyboard-nav focus indicators. Every clickable element on the
+     dashboard — disclosure summaries (machine cards, diag drawer, PR
+     entries), buttons, and footer links — was missing :focus-visible
+     styling, so a Tab-driven walk through the page rendered no visible
+     cursor. Single rule covers all of them; -offset:2 prevents the
+     outline from clipping the rounded panel edges. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  summary:focus-visible { outline-offset: -2px; border-radius: 6px; }
+
   .install-btn {
     background: var(--accent); border: none; border-radius: 6px;
     color: var(--bg); font-size: 11px; font-weight: 600;
@@ -500,10 +538,10 @@
 <div class="subtitle">Budget-aware autonomous dispatch across machines</div>
 
 <div class="refresh-bar">
-  <span id="lastRefresh">Loading...</span>
+  <span id="lastRefresh" aria-live="polite" aria-atomic="true">Loading...</span>
   <span>
-    <button class="install-btn" id="installBtn" onclick="installPWA()">Install App</button>
-    <button class="refresh-btn" onclick="refresh()">Refresh</button>
+    <button class="install-btn" id="installBtn" onclick="installPWA()" aria-label="Install dashboard as app">Install App</button>
+    <button class="refresh-btn" onclick="refresh()" aria-label="Refresh dashboard data">Refresh</button>
   </span>
 </div>
 
@@ -901,6 +939,9 @@ const HEALTHY_OUTCOMES = new Set([
   // 'auto-recovered' = dispatch.mjs recovered from a transient failure.
   // Both are healthy completions, just without a commit to push.
   'no-changes', 'auto-recovered',
+  // 'health-check-pass' = BudgetDispatcher-Health 2h cron ran the per-project
+  // vitest+typecheck pulse and everything passed. Real signal, not a no-op.
+  'health-check-pass',
 ]);
 const TROUBLED_OUTCOMES = new Set([
   'local-task-failed', 'reverted', 'auto-push-blocked', 'auto-push-failed',
@@ -916,6 +957,10 @@ const TROUBLED_OUTCOMES = new Set([
   'auto-disabled', 'drift-alert', 'local-env-broken',
   'scaffold-missing', 'scaffold-check-error',
   'clinical-gate-revert', 'triage-parse-error',
+  // 'health-check-fail' = per-project pulse matched a known sandbox signature
+  // and wrote an alert. ('health-check-infrastructure' deliberately stays out
+  // of both sets — see EXPECTED_UNCLASSIFIED in machine-status-coverage.test.)
+  'health-check-fail',
 ]);
 
 function computeMachineStatus(fleet) {
