@@ -906,6 +906,16 @@ const TROUBLED_OUTCOMES = new Set([
   'local-task-failed', 'reverted', 'auto-push-blocked', 'auto-push-failed',
   'canary-failed', 'scan-revert', 'audit-truncated', 'audit-thin',
   'pipeline-aborted',
+  // Worker-class troubled outcomes added 2026-05-21 to match outcomes.mjs.
+  // 'auto-disabled' = project force-disabled (circuit breaker / opt-out).
+  // 'drift-alert' = drift detector tripped.
+  // 'local-env-broken' = env broke mid-cycle.
+  // 'scaffold-missing' / 'scaffold-check-error' = scaffold gate failed.
+  // 'clinical-gate-revert' = sibling of 'scan-revert' / 'reverted'.
+  // 'triage-parse-error' = LLM triage output unparseable.
+  'auto-disabled', 'drift-alert', 'local-env-broken',
+  'scaffold-missing', 'scaffold-check-error',
+  'clinical-gate-revert', 'triage-parse-error',
 ]);
 
 function computeMachineStatus(fleet) {
