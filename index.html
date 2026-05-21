@@ -303,6 +303,12 @@
   .wh-sentence.broken { color: var(--red); }
   .wh-sentence.waiting { color: var(--yellow); }
   .wh-sentence.running { color: var(--green); }
+  /* Kimi gate chip — right-aligned in the row; flex-shrink:0 keeps it on
+     one line; sentence's flex:1 pushes us to the edge. */
+  .wh-kimi { flex-shrink: 0; white-space: nowrap; padding-top: 1px; font-variant-numeric: tabular-nums; }
+  .wh-kimi.green { color: var(--green); }
+  .wh-kimi.red { color: var(--red); }
+  .wh-kimi.unknown { color: var(--text-dim); }
 
   /* Today's work — 3-row mini-table. */
   .tw-row {
@@ -488,13 +494,18 @@ const GIST_URL = `https://api.github.com/gists/${GIST_ID}`;
 const STALE_HOURS = 4;
 
 // Friendly display names for each machine. Keys are the lowercase hostnames
-// that appear in fleet-<hostname>.json. Update these when machines change.
-const MACHINE_NAMES = {
+// that appear in fleet-<hostname>.json. Seed/fallback only — the real source
+// of truth is config/shared.json:expected_machines, surfaced through
+// fleet-membership.json's verdict entries by refreshMachineNames(gist) on
+// every render. Keys here drive display order until/unless a gist-sourced
+// machine appears that isn't seeded here (those get appended).
+const MACHINE_NAMES_FALLBACK = {
   'desktop-p7h5aj1': 'Downstairs PC',
   'desktop-tojgbg2': 'Upstairs PC',
   'perrypc':         'Main PC',
   'perryslenovo':    'Laptop',
 };
+let MACHINE_NAMES = { ...MACHINE_NAMES_FALLBACK };
 
 // Track last successful refresh so we can show staleness when a refresh fails.
 let lastSuccessTs = null;
@@ -1868,8 +1879,37 @@ function renderWhatsHappening(fleetSnaps) {
     sentenceEl.textContent = whatsHappeningSentence(fleet, status);
     row.appendChild(sentenceEl);
 
+    // Kimi gate chip — ports the `Kimi gate: ...` line from
+    // remote-status.mjs:172-188. After PR #33 the `weekly-floor-threatened`
+    // skip is the new high-frequency reason; surfacing it on the row makes
+    // the dispatcher's voluntary cap visible without SSHing.
+    const kimiEl = buildKimiGateChip(fleet);
+    if (kimiEl) row.appendChild(kimiEl);
+
     container.appendChild(row);
   }
+}
+
+function buildKimiGateChip(fleet) {
+  // Gate render is conditional on a kimi snapshot existing for this machine —
+  // mirrors remote-status.mjs:177 (only print the Kimi line when generated_at
+  // is present; otherwise the gist write-side just hadn't emitted it yet).
+  if (!present(fleet?.kimi_generated_at)) return null;
+  const auth = fleet.kimi_dispatch_authorized;
+  let gateClass, gateText;
+  if (auth === true) { gateClass = 'green'; gateText = 'green'; }
+  else if (auth === false) { gateClass = 'red'; gateText = 'red'; }
+  else { gateClass = 'unknown'; gateText = '?'; }
+  const reason = present(fleet.kimi_skip_reason) ? ` (${fleet.kimi_skip_reason})` : '';
+  const rh = fleet.kimi_rolling_5h_headroom_pct;
+  const wh = fleet.kimi_weekly_headroom_pct;
+  const headroom = (rh !== null && rh !== undefined && wh !== null && wh !== undefined)
+    ? `  5h=${rh}% weekly=${wh}%`
+    : '';
+  const el = document.createElement('span');
+  el.className = `wh-kimi ${gateClass}`;
+  el.textContent = `kimi: ${gateText}${reason}${headroom}`;
+  return el;
 }
 
 // "Today's work" — three numbers: dispatches today vs cap, auto-commits
@@ -2058,6 +2098,10 @@ function renderAttention(gist, fleetSnaps) {
   container.innerHTML = '';
 
   const entries = [];
+  // Track Rule A machines so Rule C can enrich an existing row instead of
+  // double-listing the same machine when it has both 3 consecutive errors
+  // and a structural-failure-with-candidates.
+  const ruleAEntryByMachine = new Map();
 
   // Rule A: any machine with >= 3 consecutive errors.
   for (const f of fleetSnaps || []) {
@@ -2074,7 +2118,9 @@ function renderAttention(gist, fleetSnaps) {
     } else {
       detail = 'Open the per-machine card below for the diagnostics drawer.';
     }
-    entries.push({ tier: 'err', headline, detail });
+    const entry = { tier: 'err', headline, detail };
+    entries.push(entry);
+    if (f.machine) ruleAEntryByMachine.set(f.machine, entry);
   }
 
   // Rule B: stale machines from fleet-membership.json verdict. Both `stale`
@@ -2102,6 +2148,44 @@ function renderAttention(gist, fleetSnaps) {
         detail: 'Either it has never run, or the gist write is failing. Check GIST_AUTH_TOKEN scope on that machine.',
       });
     }
+  }
+
+  // Rule C: per-machine structural-failure context from health-<machine>.json.
+  // Mirrors the `Failure ctx: ... candidates=[...]` line from remote-status.mjs
+  // (lines 203-214) so the operator can see which models were tried-and-rejected
+  // by a project-scoped local.json override without SSHing into the failing PC.
+  // Only fires when the machine is degraded/down with a project-scoped failure
+  // — for healthy/idle machines this would be noise.
+  for (const f of fleetSnaps || []) {
+    if (!f?.machine) continue;
+    // parseFile() returns {} on missing, never null — plain `.` is sufficient.
+    const health = parseFile(gist, `health-${f.machine}.json`);
+    const sf = health.last_structural_failure;
+    if (!sf || !sf.project) continue;
+    if (health.state !== 'degraded' && health.state !== 'down') continue;
+    const cands = Array.isArray(sf.candidates) && sf.candidates.length
+      ? `candidates=[${sf.candidates.join(',')}]`
+      : '';
+    const cls = sf.task_class ? ` class=${sf.task_class}` : '';
+    // health.mjs doesn't strictly require sf.task alongside sf.project; fall
+    // back to '?' so we never render "project/undefined".
+    const task = sf.task || '?';
+    const ctx = `${sf.reason} on ${sf.project}/${task}${cls}${cands ? ' ' + cands : ''}`;
+    const ruleAEntry = ruleAEntryByMachine.get(f.machine);
+    if (ruleAEntry) {
+      // Enrich the existing Rule A row rather than double-listing the machine.
+      ruleAEntry.detail = ruleAEntry.detail
+        ? `${ruleAEntry.detail} Failure ctx: ${ctx}.`
+        : `Failure ctx: ${ctx}.`;
+      continue;
+    }
+    const friendly = MACHINE_NAMES[f.machine] || f.machine || '(unknown)';
+    const tier = health.state === 'down' ? 'err' : 'warn';
+    entries.push({
+      tier,
+      headline: `${friendly} is ${health.state}: ${sf.reason}.`,
+      detail: `Failure ctx: ${ctx}.`,
+    });
   }
 
   if (entries.length === 0) {
@@ -2135,20 +2219,45 @@ function renderAttention(gist, fleetSnaps) {
 
 // === Render ===
 
+function refreshMachineNames(gist) {
+  // Rebuild MACHINE_NAMES from fleet-membership.json so new machines added to
+  // config/shared.json:expected_machines appear without an HTML edit. The
+  // membership-check.mjs verdict spreads each expected_machines entry across
+  // active/stale/missing arrays — walk all three and union the (node_id, name)
+  // pairs. Seed from MACHINE_NAMES_FALLBACK first so the fallback ordering is
+  // preserved for known machines and only NEW ones get appended.
+  MACHINE_NAMES = { ...MACHINE_NAMES_FALLBACK };
+  const verdict = parseFile(gist, 'fleet-membership.json')?.verdict;
+  if (!verdict) return;
+  for (const arr of [verdict.active, verdict.stale, verdict.missing]) {
+    for (const entry of (arr || [])) {
+      if (entry?.node_id && entry?.name) MACHINE_NAMES[entry.node_id] = entry.name;
+    }
+  }
+}
+
 function render(gist) {
-  // Match per-machine fleet snapshots only. Both fleet-membership.json AND
-  // fleet-membership-alert-state.json share the fleet- prefix but are not
-  // heartbeats (no `machine` field). Filter by shape so any future
-  // top-level fleet-*.json schema is self-protecting; mirrors the same
-  // guard in scripts/remote-status.mjs.
-  const fleetSnaps = Object.keys(gist.files || {})
-    .filter((f) => /^fleet-[a-z0-9-]+\.json$/.test(f))
-    .map((f) => {
-      const snap = parseFile(gist, f);
-      if (snap && typeof snap === 'object') snap.__file = f;
-      return snap;
-    })
-    .filter((snap) => snap && typeof snap.machine === 'string');
+  // Refresh the machine-name map before anything else renders, so all
+  // downstream panels see config/shared.json's roster (via fleet-membership)
+  // not just the hardcoded fallback.
+  refreshMachineNames(gist);
+  // Match per-machine fleet snapshots only — fleet-membership.json starts
+  // with the same prefix but is structurally different (it's the membership
+  // verdict written by scripts/membership-check.mjs) and used to slip through
+  // the loose filter, rendering a phantom card. The new top sections iterate
+  // this same list so the regex tightens here, not just at the new call sites.
+  const fleetFiles = Object.keys(gist.files || {}).filter(
+    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && f !== 'fleet-membership.json'
+  );
+  // Pre-parse fleet snapshots once — used by every top section and the
+  // per-machine cards below. Each file is at most a small JSON object; the
+  // cost of double-parsing was negligible but the intermediate is also
+  // handy for fleet-wide aggregations.
+  const fleetSnaps = fleetFiles.map((f) => {
+    const snap = parseFile(gist, f);
+    snap.__file = f;
+    return snap;
+  });
 
   // === Top sections (Step 2 redesign) ===
   // Order is the load-bearing part: banner → what's happening → today's
@@ -2273,6 +2382,19 @@ function render(gist) {
     // get the "this machine hasn't checked in" signal without needing color.
     if (state === 'stale' && present(fleet.last_run_ts)) {
       rows += `<div class="row"><span class="label">Stale</span><span class="value warn">no heartbeat in ${esc(ago(fleet.last_run_ts))}</span></div>`;
+    }
+
+    // Auto-pull circuit breaker — a silently-frozen PC keeps dispatching on
+    // whatever sha it had when the freeze landed. Without this row a 25h-frozen
+    // machine looks identical to a healthy one in the HTML view. Mirrors the
+    // terminal dashboard format from scripts/remote-status.mjs:189-202.
+    if (fleet.auto_pull_frozen === true) {
+      const sha = fleet.auto_pull_sha ? String(fleet.auto_pull_sha).slice(0, 7) : '?';
+      const fails = Number.isFinite(fleet.auto_pull_post_pull_failures)
+        ? `${fleet.auto_pull_post_pull_failures} post-pull failures`
+        : 'frozen';
+      const dur = fleet.auto_pull_frozen_at ? ` for ${ago(fleet.auto_pull_frozen_at).replace(/ ago$/, '')}` : '';
+      rows += `<div class="row"><span class="label">Auto-pull</span><span class="value error">FROZEN at ${esc(sha)}${esc(dur)} (${esc(fails)})</span></div>`;
     }
 
     body.innerHTML = rows;
