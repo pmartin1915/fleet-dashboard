@@ -257,6 +257,46 @@
   .status-dot.asleep  { background: var(--text-dim); }
   .status-dot.broken  { background: var(--red); }
 
+  /* Pixel-art PC icon — vintage 1990s beige desktop, hand-drawn SVG with
+     crisp-edges rendering. The .pc-led pixel is the only piece that recolors
+     by machine state; everything else is static. Sized at 28px to read at
+     dashboard zoom while keeping the What's-Happening rows compact. */
+  .pc-icon {
+    width: 32px; height: 32px;
+    flex-shrink: 0; display: block;
+    image-rendering: pixelated;
+  }
+  /* Screen + LED both recolor by state. The screen is the dominant
+     indicator (large, visible at a glance); the LED is a smaller secondary
+     signal. Colors evoke vintage CRT phosphors: green for running, amber
+     for waiting/skipped, red for broken, near-black for asleep. */
+  .pc-icon .pc-screen { fill: #1a2c34; }
+  .pc-icon .pc-led    { fill: var(--text-dim); }
+
+  .pc-icon.running .pc-screen { fill: #144826; }
+  .pc-icon.running .pc-led    {
+    fill: var(--green);
+    filter: drop-shadow(0 0 1.2px var(--green));
+  }
+
+  .pc-icon.waiting .pc-screen { fill: #4a3a14; }
+  .pc-icon.waiting .pc-led    {
+    fill: var(--yellow);
+    filter: drop-shadow(0 0 1.2px var(--yellow));
+  }
+
+  .pc-icon.broken  .pc-screen { fill: #4a1818; }
+  .pc-icon.broken  .pc-led    {
+    fill: var(--red);
+    filter: drop-shadow(0 0 1.2px var(--red));
+  }
+
+  .pc-icon.asleep  .pc-screen { fill: #0c0c0c; }
+  .pc-icon.asleep  .pc-led    { fill: #4a4a4a; }
+
+  .pc-icon.idle    .pc-screen { fill: #1a2c34; }
+  .pc-icon.idle    .pc-led    { fill: var(--text-dim); }
+
   /* Banner v2 — operator-facing one-sentence health summary. Replaces the
      legacy uppercase-state-+-reason-code banner with plain English. */
   .banner-v2 {
@@ -848,6 +888,26 @@ function phaseToStage(phase) {
 // Causality: the order of checks matters. Errors and total-stale beat
 // everything; user-active beats successful-but-recent because it's the
 // expected reason a machine is quiet.
+// Outcome buckets — mirror scripts/lib/outcomes.mjs literal values. Pre-2026-05-20
+// this function only checked the literal 'success' string, but the dispatcher
+// emits 'wrapper-success' / 'auto-push-success' on healthy completion and
+// 'local-task-failed' / 'reverted' / 'auto-push-blocked' / 'canary-failed' /
+// 'scan-revert' / 'auto-push-failed' on troubled-but-not-broken cycles. Result
+// was that the status function collapsed every machine to 'idle' on most days
+// and the dashboard's status-dot / pixel PC LED never colored.
+const HEALTHY_OUTCOMES = new Set([
+  'success', 'wrapper-success', 'auto-push-success',
+  // 'no-changes' = verify-commit found nothing to commit (worker ran clean).
+  // 'auto-recovered' = dispatch.mjs recovered from a transient failure.
+  // Both are healthy completions, just without a commit to push.
+  'no-changes', 'auto-recovered',
+]);
+const TROUBLED_OUTCOMES = new Set([
+  'local-task-failed', 'reverted', 'auto-push-blocked', 'auto-push-failed',
+  'canary-failed', 'scan-revert', 'audit-truncated', 'audit-thin',
+  'pipeline-aborted',
+]);
+
 function computeMachineStatus(fleet) {
   const errors = Number(fleet?.consecutive_errors) || 0;
   const lastRunMs = fleet?.last_run_ts
@@ -861,7 +921,8 @@ function computeMachineStatus(fleet) {
   if (fleet?.last_run_reason === 'user-active') return 'asleep';
   if (ageHrs > STALE_HOURS) return 'asleep';
   if (fleet?.last_run_outcome === 'skipped') return 'waiting';
-  if (fleet?.last_run_outcome === 'success') {
+  if (TROUBLED_OUTCOMES.has(fleet?.last_run_outcome)) return 'waiting';
+  if (HEALTHY_OUTCOMES.has(fleet?.last_run_outcome)) {
     return ageHrs * 60 < 10 ? 'running' : 'idle';
   }
   return 'idle';
@@ -876,6 +937,70 @@ function makeStatusDot(state, size) {
   const dot = document.createElement('span');
   dot.className = `status-dot ${variant}${size === 'lg' ? ' lg' : ''}`;
   return dot;
+}
+
+// 16-bit pixel-art PC icon. Vintage 1990s beige desktop, CRT on top, with a
+// single LED pixel that recolors by machine state via the .pc-led CSS rules.
+// Parsed once via DOMParser (HTML `innerHTML` would mishandle the SVG
+// namespace) and cloned per call so each row gets an independent node we can
+// add a state class to. Status states match makeStatusDot's vocabulary.
+const PC_ICON_TEMPLATE = (() => {
+  const svgStr =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ' +
+    'class="pc-icon" shape-rendering="crispEdges" aria-hidden="true" focusable="false">' +
+      // ---- Monitor housing
+      '<rect x="3" y="2" width="18" height="11" fill="#c8c0a8"/>' +
+      '<rect x="3" y="2" width="18" height="1" fill="#dcd4be"/>' +  // top highlight
+      '<rect x="3" y="2" width="1" height="11" fill="#dcd4be"/>' +  // left highlight
+      '<rect x="20" y="2" width="1" height="11" fill="#9c9070"/>' + // right shadow
+      '<rect x="3" y="12" width="18" height="1" fill="#9c9070"/>' + // bottom shadow
+      // ---- Screen (recolors by state via .pc-screen class)
+      '<rect class="pc-screen" x="5" y="4" width="14" height="7"/>' +
+      // Translucent bevels so the highlight tone follows whatever screen color
+      // is set per state (white overlay = lighter shade, black overlay = darker).
+      '<rect x="5" y="4" width="14" height="1" fill="#ffffff" fill-opacity="0.18"/>' +  // top
+      '<rect x="5" y="4" width="1"  height="7" fill="#ffffff" fill-opacity="0.18"/>' +  // left
+      '<rect x="5" y="10" width="14" height="1" fill="#000000" fill-opacity="0.30"/>' + // bottom shadow
+      '<rect x="18" y="4" width="1"  height="7" fill="#000000" fill-opacity="0.30"/>' + // right shadow
+      // Monochrome "window" on the screen — translucent white so it reads on
+      // any screen color (green/amber/red phosphor + dark idle).
+      '<rect x="13" y="6" width="4" height="3" fill="#ffffff" fill-opacity="0.85"/>' +
+      '<rect x="13" y="6" width="4" height="1" fill="#000000" fill-opacity="0.35"/>' +
+      '<rect x="14" y="7" width="2" height="1" fill="#000000" fill-opacity="0.25"/>' +
+      // ---- Desktop case
+      '<rect x="1" y="13" width="22" height="6" fill="#d4c8a8"/>' +
+      '<rect x="1" y="13" width="22" height="1" fill="#e6dbc0"/>' + // top highlight
+      '<rect x="1" y="13" width="1"  height="6" fill="#e6dbc0"/>' + // left highlight
+      '<rect x="22" y="13" width="1" height="6" fill="#9c9070"/>' + // right shadow
+      '<rect x="1" y="18" width="22" height="1" fill="#9c9070"/>' + // bottom shadow
+      // LED recess (always dark) + LED light (recolored by CSS via .pc-led)
+      '<rect x="4" y="15" width="1" height="1" fill="#1f1c18"/>' +
+      '<rect x="4" y="15" width="1" height="1" class="pc-led"/>' +
+      // Vent grille (two slim horizontal slats)
+      '<rect x="6" y="15" width="5" height="1" fill="#8a7f60"/>' +
+      '<rect x="6" y="17" width="5" height="1" fill="#8a7f60"/>' +
+      // Floppy slot
+      '<rect x="13" y="16" width="8" height="1" fill="#1f1c18"/>' +
+      '<rect x="13" y="15" width="8" height="1" fill="#b8ad90"/>' +
+      // ---- Keyboard hint
+      '<rect x="2" y="19" width="20" height="3" fill="#bcb190"/>' +
+      '<rect x="2" y="19" width="20" height="1" fill="#cdc1a0"/>' + // top highlight
+      '<rect x="2" y="21" width="20" height="1" fill="#7a7050"/>' + // bottom shadow
+      '<rect x="5"  y="20" width="1" height="1" fill="#7a7050"/>' + // key dots
+      '<rect x="8"  y="20" width="1" height="1" fill="#7a7050"/>' +
+      '<rect x="11" y="20" width="1" height="1" fill="#7a7050"/>' +
+      '<rect x="14" y="20" width="1" height="1" fill="#7a7050"/>' +
+      '<rect x="17" y="20" width="1" height="1" fill="#7a7050"/>' +
+    '</svg>';
+  return new DOMParser().parseFromString(svgStr, 'image/svg+xml').documentElement;
+})();
+
+function makePcIcon(state) {
+  const known = ['running', 'idle', 'waiting', 'asleep', 'broken'];
+  const variant = known.includes(state) ? state : 'idle';
+  const svg = PC_ICON_TEMPLATE.cloneNode(true);
+  svg.classList.add(variant);
+  return svg;
 }
 
 // Compose the plain-English sentence shown after each machine name in the
@@ -1872,7 +1997,7 @@ function renderWhatsHappening(fleetSnaps) {
 
     const iconEl = document.createElement('span');
     iconEl.className = 'wh-icon';
-    iconEl.appendChild(makeStatusDot(status));
+    iconEl.appendChild(makePcIcon(status));
     row.appendChild(iconEl);
 
     const sentenceEl = document.createElement('span');
@@ -2242,13 +2367,14 @@ function render(gist) {
   // downstream panels see config/shared.json's roster (via fleet-membership)
   // not just the hardcoded fallback.
   refreshMachineNames(gist);
-  // Match per-machine fleet snapshots only — fleet-membership.json starts
-  // with the same prefix but is structurally different (it's the membership
-  // verdict written by scripts/membership-check.mjs) and used to slip through
-  // the loose filter, rendering a phantom card. The new top sections iterate
-  // this same list so the regex tightens here, not just at the new call sites.
+  // Match per-machine fleet snapshots only. The gist also carries
+  // fleet-membership.json (the membership verdict from membership-check.mjs)
+  // and fleet-membership-alert-state.json (the alert dedupe state); both share
+  // the fleet-* prefix and used to slip through, rendering phantom machine
+  // rows like "membership-alert-state". The exclusion is now a prefix check
+  // so any future fleet-membership-* tooling file is auto-filtered too.
   const fleetFiles = Object.keys(gist.files || {}).filter(
-    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && f !== 'fleet-membership.json'
+    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && !f.startsWith('fleet-membership')
   );
   // Pre-parse fleet snapshots once — used by every top section and the
   // per-machine cards below. Each file is at most a small JSON object; the
