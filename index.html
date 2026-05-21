@@ -922,8 +922,13 @@ function computeMachineStatus(fleet) {
   if (ageHrs > STALE_HOURS) return 'asleep';
   if (fleet?.last_run_outcome === 'skipped') return 'waiting';
   if (TROUBLED_OUTCOMES.has(fleet?.last_run_outcome)) return 'waiting';
+  // 20-min running window: matches the dispatcher's 20-min cron cadence so a
+  // healthy machine stays "running" green through one full cycle gap instead
+  // of flipping to idle teal halfway between cycles. Bumped from 10 min on
+  // 2026-05-21 per operator feedback (all-green was unreachable at 10 min
+  // because cron cycles are staggered and rarely land within the same window).
   if (HEALTHY_OUTCOMES.has(fleet?.last_run_outcome)) {
-    return ageHrs * 60 < 10 ? 'running' : 'idle';
+    return ageHrs * 60 < 20 ? 'running' : 'idle';
   }
   return 'idle';
 }
