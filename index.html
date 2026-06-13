@@ -249,6 +249,82 @@
   }
   .ad-count.zero { color: var(--text-dim); font-weight: 400; }
 
+  /* === Control Room - Soviet-reactor instrument panel ===
+     Aesthetic restyle (2026-06-08): backlit indicator lamps + annunciator
+     telemetry strip, matching the local dashboard.mjs Control Room tab.
+     Scoped under #controlRoomPanel; render JS is untouched. ASCII-only. */
+  #controlRoomPanel {
+    --cr-steel-2: #0e0f16; --cr-amber: #ffb454; --cr-label: #7e88ac;
+  }
+  .cr-projects { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .cr-chip {
+    display: flex; align-items: center; gap: 7px;
+    background: linear-gradient(180deg, #15161f, #0e0f16);
+    border: 1px solid #000; border-radius: 5px;
+    padding: 4px 10px; font-size: 10px; letter-spacing: 0.5px;
+    box-shadow: inset 1px 1px 0 #3a3f55, inset -1px -1px 0 #05060a, 0 2px 4px rgba(0,0,0,0.4);
+  }
+  /* chunky backlit indicator lamp */
+  .cr-chip-dot {
+    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, #3a3f55, #1a1d2c 70%);
+    box-shadow: inset 0 0 0 1px #000, inset 1px 1px 1px rgba(255,255,255,0.12), 0 1px 1px rgba(0,0,0,0.6);
+  }
+  .cr-chip-dot.healthy {
+    background: radial-gradient(circle at 35% 30%, #e6ffce, var(--green) 60%, #4a6b30 100%);
+    box-shadow: inset 0 0 0 1px #0a1505, 0 0 7px rgba(158,206,106,0.8), 0 0 2px rgba(158,206,106,1);
+  }
+  .cr-chip-dot.degraded {
+    background: radial-gradient(circle at 35% 30%, #ffe9c2, var(--yellow) 60%, #8a6a2e 100%);
+    box-shadow: inset 0 0 0 1px #1a1304, 0 0 7px rgba(224,175,104,0.8), 0 0 2px rgba(224,175,104,1);
+  }
+  .cr-chip-dot.down {
+    background: radial-gradient(circle at 35% 30%, #ffd2db, var(--red) 60%, #8a2f3d 100%);
+    box-shadow: inset 0 0 0 1px #1a0509, 0 0 8px rgba(247,118,142,0.85), 0 0 3px rgba(247,118,142,1);
+    animation: cr-alarm 1.4s ease-in-out infinite;
+  }
+  .cr-chip-dot.idle {
+    background: radial-gradient(circle at 35% 30%, #3a3f55, #14161f 72%);
+    box-shadow: inset 0 0 0 1px #000, inset 1px 1px 1px rgba(255,255,255,0.1);
+  }
+  @keyframes cr-alarm { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.5); } }
+  @media (prefers-reduced-motion: reduce) { .cr-chip-dot.down { animation: none; } }
+  .cr-chip-state { color: var(--cr-label); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; }
+  /* relay STAGE on the chip -- green phosphor (SYSTEM-MAP s2 baton) */
+  .cr-chip-stage {
+    color: #7fffa6; text-shadow: 0 0 4px rgba(127,255,166,0.5);
+    font-weight: 700; letter-spacing: 0.5px; font-size: 9px;
+    padding: 1px 6px; border-radius: 3px; background: rgba(0,0,0,0.35);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  /* annunciator / telemetry strip */
+  .cr-feed {
+    max-height: 380px; overflow-y: auto;
+    background: var(--cr-steel-2); border-radius: 4px; padding: 4px 12px;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,0.6);
+  }
+  .cr-feed-row {
+    display: flex; gap: 10px; padding: 5px 0; align-items: baseline;
+    border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 11px;
+  }
+  .cr-feed-row:last-child { border-bottom: none; }
+  .cr-feed-time { color: var(--cr-label); font-size: 10px; flex-shrink: 0; min-width: 58px; }
+  .cr-feed-machine { color: var(--cyan); font-size: 10px; flex-shrink: 0; min-width: 64px; }
+  .cr-feed-line { color: #aeb6d6; word-break: break-word; }
+  .cr-feed-row.ok .cr-feed-line { color: var(--green); text-shadow: 0 0 4px rgba(158,206,106,0.4); }
+  .cr-feed-row.bad .cr-feed-line { color: var(--red); text-shadow: 0 0 4px rgba(247,118,142,0.45); }
+  .cr-feed-row.warn .cr-feed-line { color: var(--yellow); text-shadow: 0 0 4px rgba(224,175,104,0.4); }
+  /* Construction timeline + flagship spotlight (ASCII-only labels) */
+  #controlRoomPanel .cr-subhead { color: var(--cr-amber); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 14px 0 6px; }
+  #controlRoomPanel .cr-spotlight { border: 1px solid rgba(224,175,104,0.45); border-radius: 5px; padding: 8px 10px; margin-bottom: 10px; box-shadow: 0 0 14px rgba(224,175,104,0.12); }
+  #controlRoomPanel .cr-spotlight-title { color: var(--cr-amber); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  #controlRoomPanel .cr-spotlight-count { font-size: 10px; font-weight: 600; color: var(--green); letter-spacing: 0.5px; margin-left: 6px; }
+  #controlRoomPanel .cr-timeline-slug { display: inline-block; min-width: 64px; color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-right: 6px; }
+  #controlRoomPanel .cr-timeline-task { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7fffa6; border: 1px solid rgba(127,255,166,0.4); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
+  #controlRoomPanel .cr-timeline-sha { color: var(--cr-label); font-size: 10px; margin-left: 6px; opacity: 0.8; }
+  #controlRoomPanel a.cr-timeline-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.25); }
+  #controlRoomPanel a.cr-timeline-link:hover { border-bottom-color: var(--green); }
+
   /* === Step 2 redesign panels === */
 
   /* Status dot — replaces the platform-rendered emoji set
@@ -561,6 +637,7 @@
 <div id="stuckPatternsPanel" class="auto-digest" style="display:none"></div>
 <div id="testCountsPanel" class="auto-digest" style="display:none"></div>
 <div id="pendingMerges" class="pending-merges"></div>
+<div id="controlRoomPanel" class="auto-digest" style="display:none"></div>
 <div id="machines"></div>
 
 <div class="footer">
@@ -1387,6 +1464,219 @@ function renderAutoDigest(gist) {
 // source tree. Mirrors aggregateFleetStuckPatterns in
 // scripts/lib/auto-digest.mjs (kept in sync by hand since the dashboard
 // has no bundler).
+function renderControlRoom(fleetSnaps) {
+  const container = document.getElementById('controlRoomPanel');
+  container.innerHTML = '';
+
+  const withCR = (fleetSnaps || []).filter(
+    (s) => s && s.control_room &&
+      (Array.isArray(s.control_room.feed) || Array.isArray(s.control_room.cards))
+  );
+
+  // Merge feeds across machines (tag each with its friendly machine name).
+  const feed = [];
+  for (const s of withCR) {
+    const name = MACHINE_NAMES[s.machine] || s.machine;
+    for (const f of (s.control_room.feed || [])) feed.push({ ...f, machine: name });
+  }
+
+  // Aggregate per-project health across machines (worst health wins).
+  const RANK = { down: 3, degraded: 2, healthy: 1, idle: 0 };
+  const projMap = new Map();
+  for (const s of withCR) {
+    for (const c of (s.control_room.cards || [])) {
+      const cur = projMap.get(c.slug);
+      if (!cur || (RANK[c.health] || 0) > (RANK[cur.health] || 0)) {
+        projMap.set(c.slug, {
+          slug: c.slug, health: c.health,
+          relayStage: c.relayStage || null, relayNext: c.relayNext || null,
+        });
+      } else if (cur && !cur.relayStage && c.relayStage) {
+        // Fill a missing stage from another machine that has the baton/derived view.
+        cur.relayStage = c.relayStage; cur.relayNext = c.relayNext || null;
+      }
+    }
+  }
+
+  if (feed.length === 0 && projMap.size === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  feed.sort((a, b) => (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0));
+  const capped = feed.slice(0, 50);
+
+  const header = document.createElement('div');
+  header.className = 'ad-header';
+  header.textContent =
+    `CONTROL ROOM — live across ${withCR.length} ${withCR.length === 1 ? 'machine' : 'machines'} ` +
+    `(STAGE = relay position per SYSTEM-MAP s2; state = last phase/outcome)`;
+  container.appendChild(header);
+
+  if (projMap.size > 0) {
+    const projWrap = document.createElement('div');
+    projWrap.className = 'cr-projects';
+    const projects = Array.from(projMap.values()).sort(
+      (a, b) => (RANK[b.health] || 0) - (RANK[a.health] || 0) || a.slug.localeCompare(b.slug)
+    );
+    for (const p of projects) {
+      const chip = document.createElement('div');
+      chip.className = 'cr-chip';
+      const dot = document.createElement('span');
+      dot.className = 'cr-chip-dot ' + (p.health || 'idle');
+      const slug = document.createElement('span');
+      slug.textContent = p.slug;
+      const st = document.createElement('span');
+      st.className = 'cr-chip-state';
+      st.textContent = p.health || 'idle';
+      chip.appendChild(dot);
+      chip.appendChild(slug);
+      if (p.relayStage) {
+        const stage = document.createElement('span');
+        stage.className = 'cr-chip-stage';
+        stage.textContent = p.relayStage.toUpperCase() +
+          (p.relayNext ? ' → ' + p.relayNext.toUpperCase() : '');
+        chip.appendChild(stage);
+      }
+      chip.appendChild(st);
+      projWrap.appendChild(chip);
+    }
+    container.appendChild(projWrap);
+  }
+
+  const feedWrap = document.createElement('div');
+  feedWrap.className = 'cr-feed';
+  const GOOD = ['success', 'no-changes', 'auto-recovered', 'auto-push-success', 'health-check-pass'];
+  const BAD = ['error', 'local-env-broken', 'canary-failed', 'scan-revert', 'clinical-gate-revert', 'health-check-fail', 'auto-push-failed'];
+  for (const f of capped) {
+    const row = document.createElement('div');
+    let cls = 'warn';
+    if (GOOD.includes(f.outcome)) cls = 'ok';
+    else if (BAD.includes(f.outcome)) cls = 'bad';
+    row.className = 'cr-feed-row ' + cls;
+    const t = document.createElement('span');
+    t.className = 'cr-feed-time';
+    const ms = Date.parse(f.ts);
+    t.textContent = isFinite(ms) ? formatDuration(Date.now() - ms) : '';
+    const m = document.createElement('span');
+    m.className = 'cr-feed-machine';
+    m.textContent = f.machine || '';
+    const line = document.createElement('span');
+    line.className = 'cr-feed-line';
+    line.textContent = f.line || '';
+    row.appendChild(t);
+    row.appendChild(m);
+    row.appendChild(line);
+    feedWrap.appendChild(row);
+  }
+  if (capped.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ad-detail';
+    empty.textContent = 'No recent activity.';
+    feedWrap.appendChild(empty);
+  }
+  container.appendChild(feedWrap);
+
+  // --- Construction Timeline + flagship spotlight (from the gist-embedded
+  // git-log digest each machine carries; merged + deduped by sha). ---
+  renderConstructionTimeline(container, withCR);
+}
+
+// Build one timeline-event row mirroring the local dashboard's crTimelineRow.
+function crBuildTimelineRow(e, showSlug) {
+  const row = document.createElement('div');
+  row.className = 'cr-feed-row ' + (e.kind === 'auto' ? 'ok' : '');
+  const t = document.createElement('span');
+  t.className = 'cr-feed-time';
+  const ms = Date.parse(e.ts);
+  t.textContent = isFinite(ms) ? formatDuration(Date.now() - ms) : '';
+  row.appendChild(t);
+  const line = document.createElement('span');
+  line.className = 'cr-feed-line';
+  if (showSlug) {
+    const sl = document.createElement('span');
+    sl.className = 'cr-timeline-slug';
+    sl.textContent = e.slug;
+    line.appendChild(sl);
+  }
+  if (e.kind === 'auto') {
+    const tag = document.createElement('span');
+    tag.className = 'cr-timeline-task';
+    tag.textContent = 'auto';
+    line.appendChild(tag);
+  }
+  const txt = e.subject || '(no subject)';
+  if (e.url) {
+    const a = document.createElement('a');
+    a.className = 'cr-timeline-link';
+    a.href = e.url; a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = txt;
+    line.appendChild(a);
+  } else {
+    line.appendChild(document.createTextNode(txt));
+  }
+  if (e.prNumber) {
+    const pr = document.createElement('span');
+    pr.className = 'cr-timeline-sha';
+    pr.textContent = '#' + e.prNumber;
+    line.appendChild(pr);
+  }
+  row.appendChild(line);
+  return row;
+}
+
+function renderConstructionTimeline(container, withCR) {
+  // Merge events across machines, dedup by sha, newest first.
+  const seen = new Set();
+  const events = [];
+  let spotlight = null;
+  for (const s of withCR) {
+    const tl = s.control_room && s.control_room.timeline;
+    if (!tl) continue;
+    for (const e of (tl.events || [])) {
+      const key = e.sha || (e.slug + '|' + e.ts + '|' + e.subject);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push(e);
+    }
+    if (!spotlight && tl.spotlight && (tl.spotlight.events || []).length) spotlight = tl.spotlight;
+  }
+  if (events.length === 0 && !spotlight) return;
+  events.sort((a, b) => (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0));
+
+  if (spotlight) {
+    const head = document.createElement('div');
+    head.className = 'cr-subhead';
+    head.textContent = 'Watch it build';
+    container.appendChild(head);
+    const box = document.createElement('div');
+    box.className = 'cr-spotlight';
+    const title = document.createElement('div');
+    title.className = 'cr-spotlight-title';
+    title.textContent = spotlight.slug;
+    const cnt = document.createElement('span');
+    cnt.className = 'cr-spotlight-count';
+    cnt.textContent = (spotlight.auto || 0) + ' auto / ' + (spotlight.total || 0) + ' commits';
+    title.appendChild(cnt);
+    box.appendChild(title);
+    const feed = document.createElement('div');
+    feed.className = 'cr-feed';
+    for (const e of (spotlight.events || [])) feed.appendChild(crBuildTimelineRow(e, false));
+    box.appendChild(feed);
+    container.appendChild(box);
+  }
+
+  const head2 = document.createElement('div');
+  head2.className = 'cr-subhead';
+  head2.textContent = 'Construction timeline';
+  container.appendChild(head2);
+  const tlWrap = document.createElement('div');
+  tlWrap.className = 'cr-feed';
+  for (const e of events.slice(0, 40)) tlWrap.appendChild(crBuildTimelineRow(e, true));
+  container.appendChild(tlWrap);
+}
+
 function renderStuckPatterns(gist) {
   const container = document.getElementById('stuckPatternsPanel');
   container.innerHTML = '';
@@ -2427,24 +2717,19 @@ function render(gist) {
   // downstream panels see config/shared.json's roster (via fleet-membership)
   // not just the hardcoded fallback.
   refreshMachineNames(gist);
-  // Match per-machine fleet snapshots only. The gist also carries
-  // fleet-membership.json (the membership verdict from membership-check.mjs)
-  // and fleet-membership-alert-state.json (the alert dedupe state); both share
-  // the fleet-* prefix and used to slip through, rendering phantom machine
-  // rows like "membership-alert-state". The exclusion is now a prefix check
-  // so any future fleet-membership-* tooling file is auto-filtered too.
-  const fleetFiles = Object.keys(gist.files || {}).filter(
-    (f) => /^fleet-[a-z0-9-]+\.json$/.test(f) && !f.startsWith('fleet-membership')
-  );
-  // Pre-parse fleet snapshots once — used by every top section and the
-  // per-machine cards below. Each file is at most a small JSON object; the
-  // cost of double-parsing was negligible but the intermediate is also
-  // handy for fleet-wide aggregations.
-  const fleetSnaps = fleetFiles.map((f) => {
-    const snap = parseFile(gist, f);
-    snap.__file = f;
-    return snap;
-  });
+  // Match per-machine fleet snapshots only. Both fleet-membership.json AND
+  // fleet-membership-alert-state.json share the fleet- prefix but are not
+  // heartbeats (no `machine` field). Filter by shape so any future
+  // top-level fleet-*.json schema is self-protecting; mirrors the same
+  // guard in scripts/remote-status.mjs.
+  const fleetSnaps = Object.keys(gist.files || {})
+    .filter((f) => /^fleet-[a-z0-9-]+\.json$/.test(f))
+    .map((f) => {
+      const snap = parseFile(gist, f);
+      if (snap && typeof snap === 'object') snap.__file = f;
+      return snap;
+    })
+    .filter((snap) => snap && typeof snap.machine === 'string');
 
   // === Top sections (Step 2 redesign) ===
   // Order is the load-bearing part: banner → what's happening → today's
@@ -2478,6 +2763,11 @@ function render(gist) {
 
   // Pending-merges panel
   renderPendingMerges(gist);
+
+  // Control Room — fleet-wide narration feed + per-project health, sourced from
+  // the control_room digest embedded in each fleet-<host>.json by
+  // scripts/lib/fleet.mjs (mirrors the local dashboard.mjs Control Room tab).
+  renderControlRoom(fleetSnaps);
 
   // Per-machine detail cards (Step 3 of the redesign).
   // The "what's happening" mini-table above is the at-a-glance summary;
