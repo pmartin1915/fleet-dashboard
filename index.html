@@ -3180,6 +3180,20 @@ function render(gist) {
       rows += `<div class="row"><span class="label">Auto-pull</span><span class="value error">FROZEN at ${esc(sha)}${esc(dur)} (${esc(fails)})</span></div>`;
     }
 
+    // No-success safety-net status. Surfaced per-machine so a disabled net is
+    // never invisible again (it was silently null for ~17 days in 2026-05/06).
+    // Use `in` (not present()) so we can tell "field absent on an old gist file"
+    // — render nothing until the wrapper next runs the new fleet.mjs — apart
+    // from an explicit null, which means the net is OFF on that machine.
+    if ('safety_net_no_success_days' in fleet) {
+      const netDays = fleet.safety_net_no_success_days;
+      if (netDays == null) {
+        rows += `<div class="row"><span class="label">Safety net</span><span class="value error">OFF — no-success auto-disable disabled</span></div>`;
+      } else {
+        rows += `<div class="row"><span class="label">Safety net</span><span class="value success">armed (${esc(String(netDays))}d)</span></div>`;
+      }
+    }
+
     body.innerHTML = rows;
 
     // Daily-quota counter — append after rows, before burn bars. Only when
