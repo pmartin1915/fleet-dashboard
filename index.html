@@ -319,6 +319,11 @@
   #controlRoomPanel .cr-spotlight { border: 1px solid rgba(224,175,104,0.45); border-radius: 5px; padding: 8px 10px; margin-bottom: 10px; box-shadow: 0 0 14px rgba(224,175,104,0.12); }
   #controlRoomPanel .cr-spotlight-title { color: var(--cr-amber); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
   #controlRoomPanel .cr-spotlight-count { font-size: 10px; font-weight: 600; color: var(--green); letter-spacing: 0.5px; margin-left: 6px; }
+  #controlRoomPanel .cr-thumb { display: block; width: 100%; max-width: 360px; height: auto; border: 1px solid rgba(224,175,104,0.35); border-radius: 4px; margin: 0 0 8px; }
+  #controlRoomPanel .cr-roadmap { margin: 0 0 8px; }
+  #controlRoomPanel .cr-roadmap-label { color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-bottom: 3px; }
+  #controlRoomPanel .cr-roadmap-bar { height: 8px; background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden; }
+  #controlRoomPanel .cr-roadmap-fill { height: 100%; background: var(--green); box-shadow: 0 0 8px rgba(158,206,106,0.5); }
   #controlRoomPanel .cr-timeline-slug { display: inline-block; min-width: 64px; color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-right: 6px; }
   #controlRoomPanel .cr-timeline-task { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7fffa6; border: 1px solid rgba(127,255,166,0.4); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
   #controlRoomPanel .cr-timeline-task.task-feat,
@@ -1901,6 +1906,34 @@ function renderConstructionTimeline(container, withCR) {
       cnt.textContent = (s.auto || 0) + ' auto / ' + (s.total || 0) + ' commits';
       title.appendChild(cnt);
       box.appendChild(title);
+      if (s.thumbnailUrl) {
+        const img = document.createElement('img');
+        img.className = 'cr-thumb';
+        img.loading = 'lazy';
+        img.alt = s.slug + ' latest build screenshot';
+        img.onerror = function () { img.remove(); };
+        img.src = s.thumbnailUrl;
+        box.appendChild(img);
+      }
+      if (s.roadmap && s.roadmap.total) {
+        const rm = document.createElement('div');
+        rm.className = 'cr-roadmap';
+        const lbl = document.createElement('div');
+        lbl.className = 'cr-roadmap-label';
+        lbl.textContent = 'ROADMAP ' + (s.roadmap.done || 0) + ' / ' + s.roadmap.total + ' systems built';
+        rm.appendChild(lbl);
+        const bar = document.createElement('div');
+        bar.className = 'cr-roadmap-bar';
+        const fill = document.createElement('div');
+        fill.className = 'cr-roadmap-fill';
+        var pct = Math.round(((s.roadmap.done || 0) / s.roadmap.total) * 100);
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        rm.appendChild(bar);
+        box.appendChild(rm);
+      }
       const feed = document.createElement('div');
       feed.className = 'cr-feed';
       if (s.auto === 0) {
