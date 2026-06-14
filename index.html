@@ -344,6 +344,17 @@
   #controlRoomPanel .cr-filter button.active { color: #0e0f16; background: var(--cr-amber); border-color: var(--cr-amber); }
   #controlRoomPanel a.cr-timeline-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.25); }
   #controlRoomPanel a.cr-timeline-link:hover { border-bottom-color: var(--green); }
+  #controlRoomPanel .cr-trust-row { display: flex; gap: 10px; padding: 5px 0; align-items: baseline; font-size: 11px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  #controlRoomPanel .cr-trust-row:last-child { border-bottom: none; }
+  #controlRoomPanel .cr-revert-kind { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border-radius: 3px; padding: 0 4px; margin-right: 6px; border: 1px solid; }
+  #controlRoomPanel .cr-revert-kind.auto { color: #7fffa6; border-color: rgba(127,255,166,0.4); }
+  #controlRoomPanel .cr-revert-kind.manual { color: var(--cr-amber); border-color: rgba(255,180,84,0.45); }
+  #controlRoomPanel .cr-quality-trend { font-size: 10px; font-weight: 700; margin: 0 6px; }
+  #controlRoomPanel .cr-quality-trend.up { color: var(--red); }
+  #controlRoomPanel .cr-quality-trend.down { color: var(--green); }
+  #controlRoomPanel .cr-quality-trend.flat { color: var(--cr-label); }
+  #controlRoomPanel .cr-quality-flag { font-size: 8px; font-weight: 700; text-transform: uppercase; color: var(--red); border: 1px solid rgba(247,118,142,0.5); border-radius: 3px; padding: 0 4px; margin-left: 6px; }
+  #controlRoomPanel .cr-timeline-diff { font-family: monospace; font-size: 10px; margin-left: 6px; color: var(--cr-label); opacity: 0.85; }
 
   /* === Step 2 redesign panels === */
 
@@ -1480,6 +1491,181 @@ function renderAutoDigest(gist) {
   }
 }
 
+// === Control Room trust-signal sub-panels ===
+// Render the 5-C gates/quality/merge telemetry that rides inside each
+// fleet-<host>.json control_room digest. Each helper is additive: it
+// appends nothing when its data is missing or empty.
+
+function renderCRReverts(withCR, container) {
+  const all = [];
+  for (const s of withCR) {
+    const list = Array.isArray(s.control_room.reverts) ? s.control_room.reverts : [];
+    for (const r of list) all.push(r);
+  }
+  const seen = new Set();
+  const rows = [];
+  for (const r of all) {
+    const key = String(r.slug ?? '') + '|' + String(r.ts ?? '') + '|' + String(r.reason ?? '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(r);
+  }
+  rows.sort((a, b) => String(b.ts ?? '').localeCompare(String(a.ts ?? '')));
+  const capped = rows.slice(0, 8);
+  if (capped.length === 0) return;
+
+  const head = document.createElement('div');
+  head.className = 'cr-subhead';
+  head.textContent = 'GATES FIRED -- ' + capped.length + ' recent revert' + (capped.length === 1 ? '' : 's');
+  container.appendChild(head);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cr-feed';
+  for (const r of capped) {
+    const row = document.createElement('div');
+    const kind = r.kind === 'auto' ? 'auto' : 'manual';
+    row.className = 'cr-feed-row ' + (kind === 'auto' ? 'ok' : 'warn');
+
+    const t = document.createElement('span');
+    t.className = 'cr-feed-time';
+    const ms = Date.parse(r.ts);
+    t.textContent = isFinite(ms) ? formatDuration(Date.now() - ms) : '';
+    row.appendChild(t);
+
+    const badge = document.createElement('span');
+    badge.className = 'cr-revert-kind ' + kind;
+    badge.textContent = kind === 'auto' ? 'AUTO' : 'MANUAL';
+    row.appendChild(badge);
+
+    const slug = document.createElement('span');
+    slug.className = 'cr-timeline-slug';
+    slug.textContent = r.slug ?? '?';
+    row.appendChild(slug);
+
+    const reason = document.createElement('span');
+    reason.className = 'cr-feed-line';
+    reason.textContent = r.reason ?? '(no reason)';
+    row.appendChild(reason);
+
+    wrap.appendChild(row);
+  }
+  container.appendChild(wrap);
+}
+
+function renderCRQuality(withCR, container) {
+  const map = new Map();
+  for (const s of withCR) {
+    const q = s.control_room.quality;
+    if (!q || typeof q !== 'object') continue;
+    for (const slug of Object.keys(q)) {
+      const entry = q[slug];
+      if (!entry || typeof entry !== 'object') continue;
+      let acc = map.get(slug);
+      if (!acc) {
+        acc = { latest: entry.latest, trend: entry.trend, hasHighOrCritical: !!entry.hasHighOrCritical };
+        map.set(slug, acc);
+        continue;
+      }
+      const aLatest = entry.latest != null && Number.isFinite(Number(entry.latest)) ? Number(entry.latest) : null;
+      const bLatest = acc.latest != null && Number.isFinite(Number(acc.latest)) ? Number(acc.latest) : null;
+      if (aLatest !== null && (bLatest === null || aLatest > bLatest)) {
+        acc.latest = entry.latest;
+        acc.trend = entry.trend;
+      }
+      acc.hasHighOrCritical = !!(acc.hasHighOrCritical || entry.hasHighOrCritical);
+    }
+  }
+  if (map.size === 0) return;
+
+  const head = document.createElement('div');
+  head.className = 'cr-subhead';
+  head.textContent = 'CODE QUALITY -- audit findings per project';
+  container.appendChild(head);
+
+  const slugs = Array.from(map.keys()).sort();
+  for (const slug of slugs) {
+    const q = map.get(slug);
+    const row = document.createElement('div');
+    row.className = 'cr-trust-row';
+
+    const sl = document.createElement('span');
+    sl.className = 'cr-timeline-slug';
+    sl.textContent = slug;
+    row.appendChild(sl);
+
+    const findings = document.createElement('span');
+    findings.textContent = 'findings: ' + (q.latest != null && Number.isFinite(Number(q.latest)) ? String(q.latest) : '-');
+    row.appendChild(findings);
+
+    const trendClass = q.trend === 'up' ? 'up' : q.trend === 'down' ? 'down' : 'flat';
+    const trendText = q.trend === 'up' ? 'up' : q.trend === 'down' ? 'dn' : 'flat';
+    const trend = document.createElement('span');
+    trend.className = 'cr-quality-trend ' + trendClass;
+    trend.textContent = trendText;
+    row.appendChild(trend);
+
+    if (q.hasHighOrCritical) {
+      const flag = document.createElement('span');
+      flag.className = 'cr-quality-flag';
+      flag.textContent = 'HIGH/CRIT';
+      row.appendChild(flag);
+    }
+
+    container.appendChild(row);
+  }
+}
+
+function renderCRMergeStats(withCR, container) {
+  const map = new Map();
+  for (const s of withCR) {
+    const ms = s.control_room.mergeStats;
+    if (!ms || typeof ms !== 'object') continue;
+    for (const slug of Object.keys(ms)) {
+      const entry = ms[slug];
+      if (!entry || typeof entry !== 'object') continue;
+      const existing = map.get(slug);
+      if (!existing || Number(entry.total) > Number(existing.total)) {
+        map.set(slug, entry);
+      }
+    }
+  }
+  if (map.size === 0) return;
+
+  const head = document.createElement('div');
+  head.className = 'cr-subhead';
+  head.textContent = 'MERGE THROUGHPUT -- merged rate and median latency';
+  container.appendChild(head);
+
+  const slugs = Array.from(map.keys()).sort();
+  for (const slug of slugs) {
+    const m = map.get(slug);
+    const row = document.createElement('div');
+    row.className = 'cr-trust-row';
+
+    const sl = document.createElement('span');
+    sl.className = 'cr-timeline-slug';
+    sl.textContent = slug;
+    row.appendChild(sl);
+
+    const merged = Number(m.merged) || 0;
+    const total = Number(m.total) || 0;
+    const rate = Number.isFinite(Number(m.rate)) ? Number(m.rate) : (total > 0 ? merged / total : 0);
+    const pct = Math.round(rate * 100);
+    const text = document.createElement('span');
+    text.textContent = merged + '/' + total + ' merged (' + pct + '%)';
+    row.appendChild(text);
+
+    if (m.medianLatencyMs != null && Number.isFinite(Number(m.medianLatencyMs))) {
+      const med = Number(m.medianLatencyMs);
+      const medSpan = document.createElement('span');
+      medSpan.textContent = ' median ' + formatDurationShort(med);
+      row.appendChild(medSpan);
+    }
+
+    container.appendChild(row);
+  }
+}
+
 // === Stuck-patterns panel ===
 // Reads stuck_patterns from the same auto-digest-<host>.json gist files
 // that the auto-digest panel uses. Surfaces (project, task) pairs whose
@@ -1569,6 +1755,10 @@ function renderControlRoom(fleetSnaps) {
     container.appendChild(projWrap);
   }
 
+  renderCRReverts(withCR, container);
+  renderCRQuality(withCR, container);
+  renderCRMergeStats(withCR, container);
+
   const feedWrap = document.createElement('div');
   feedWrap.className = 'cr-feed';
   const GOOD = ['success', 'no-changes', 'auto-recovered', 'auto-push-success', 'health-check-pass'];
@@ -1652,6 +1842,14 @@ function crBuildTimelineRow(e, showSlug) {
     pr.className = 'cr-timeline-sha';
     pr.textContent = '#' + e.prNumber;
     line.appendChild(pr);
+  }
+  if (e.additions != null || e.deletions != null) {
+    const diff = document.createElement('span');
+    diff.className = 'cr-timeline-diff';
+    const a = e.additions != null ? e.additions : 0;
+    const d = e.deletions != null ? e.deletions : 0;
+    diff.textContent = '+' + a + ' -' + d;
+    line.appendChild(diff);
   }
   row.appendChild(line);
   return row;
