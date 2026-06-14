@@ -321,7 +321,27 @@
   #controlRoomPanel .cr-spotlight-count { font-size: 10px; font-weight: 600; color: var(--green); letter-spacing: 0.5px; margin-left: 6px; }
   #controlRoomPanel .cr-timeline-slug { display: inline-block; min-width: 64px; color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-right: 6px; }
   #controlRoomPanel .cr-timeline-task { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7fffa6; border: 1px solid rgba(127,255,166,0.4); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
+  #controlRoomPanel .cr-timeline-task.task-feat,
+  #controlRoomPanel .cr-timeline-task.task-feature,
+  #controlRoomPanel .cr-timeline-task.task-scaffold-app { color: #7fffa6; border-color: rgba(127,255,166,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-fix,
+  #controlRoomPanel .cr-timeline-task.task-fix-attempt { color: #ff7a7a; border-color: rgba(255,122,122,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-docs,
+  #controlRoomPanel .cr-timeline-task.task-docs-gen,
+  #controlRoomPanel .cr-timeline-task.task-audit { color: #ffd88a; border-color: rgba(255,216,138,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-test { color: #7ad1ff; border-color: rgba(122,209,255,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-chore,
+  #controlRoomPanel .cr-timeline-task.task-refactor,
+  #controlRoomPanel .cr-timeline-task.task-wip { color: #b8c0e0; border-color: rgba(184,192,224,0.45); }
   #controlRoomPanel .cr-timeline-sha { color: var(--cr-label); font-size: 10px; margin-left: 6px; opacity: 0.8; }
+  #controlRoomPanel .cr-filter { display: flex; gap: 6px; margin: 8px 0 6px; }
+  #controlRoomPanel .cr-filter button {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--cr-label); background: var(--cr-steel-2); border: 1px solid #2a2e42;
+    border-radius: 3px; padding: 3px 10px; cursor: pointer;
+  }
+  #controlRoomPanel .cr-filter button:hover { color: var(--cr-amber); border-color: rgba(255,180,84,0.45); }
+  #controlRoomPanel .cr-filter button.active { color: #0e0f16; background: var(--cr-amber); border-color: var(--cr-amber); }
   #controlRoomPanel a.cr-timeline-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.25); }
   #controlRoomPanel a.cr-timeline-link:hover { border-bottom-color: var(--green); }
 
@@ -665,6 +685,10 @@ let MACHINE_NAMES = { ...MACHINE_NAMES_FALLBACK };
 
 // Track last successful refresh so we can show staleness when a refresh fails.
 let lastSuccessTs = null;
+
+// Construction timeline filter state (global feed only; spotlights unfiltered).
+let crTimelineFilter = 'all';
+let crTimelineData = null;
 
 // === Helpers ===
 
@@ -1591,6 +1615,7 @@ function crBuildTimelineRow(e, showSlug) {
   t.className = 'cr-feed-time';
   const ms = Date.parse(e.ts);
   t.textContent = isFinite(ms) ? formatDuration(Date.now() - ms) : '';
+  if (isFinite(ms)) t.title = new Date(ms).toLocaleString();
   row.appendChild(t);
   const line = document.createElement('span');
   line.className = 'cr-feed-line';
@@ -1600,7 +1625,13 @@ function crBuildTimelineRow(e, showSlug) {
     sl.textContent = e.slug;
     line.appendChild(sl);
   }
-  if (e.kind === 'auto') {
+  if (e.task) {
+    const tag = document.createElement('span');
+    const slug = String(e.task).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    tag.className = 'cr-timeline-task' + (slug ? ' task-' + slug : '');
+    tag.textContent = String(e.task).toLowerCase();
+    line.appendChild(tag);
+  } else if (e.kind === 'auto') {
     const tag = document.createElement('span');
     tag.className = 'cr-timeline-task';
     tag.textContent = 'auto';
@@ -1627,10 +1658,15 @@ function crBuildTimelineRow(e, showSlug) {
 }
 
 function renderConstructionTimeline(container, withCR) {
+  crTimelineData = { container, withCR };
+  // Replace any previous timeline section so filter re-renders are idempotent.
+  const existing = container.querySelector('.cr-timeline-section');
+  if (existing) existing.remove();
+
   // Merge events across machines, dedup by sha, newest first.
   const seen = new Set();
   const events = [];
-  let spotlight = null;
+  let panels = null;
   for (const s of withCR) {
     const tl = s.control_room && s.control_room.timeline;
     if (!tl) continue;
@@ -1640,41 +1676,80 @@ function renderConstructionTimeline(container, withCR) {
       seen.add(key);
       events.push(e);
     }
-    if (!spotlight && tl.spotlight && (tl.spotlight.events || []).length) spotlight = tl.spotlight;
+    if (!panels && tl.spotlights && tl.spotlights.length) panels = tl.spotlights;
+    else if (!panels && tl.spotlight && (tl.spotlight.events || []).length) panels = [tl.spotlight];
   }
-  if (events.length === 0 && !spotlight) return;
+  const hasPanels = panels && panels.length;
+  if (events.length === 0 && !hasPanels) return;
   events.sort((a, b) => (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0));
 
-  if (spotlight) {
+  const section = document.createElement('div');
+  section.className = 'cr-timeline-section';
+
+  if (hasPanels) {
     const head = document.createElement('div');
     head.className = 'cr-subhead';
     head.textContent = 'Watch it build';
-    container.appendChild(head);
-    const box = document.createElement('div');
-    box.className = 'cr-spotlight';
-    const title = document.createElement('div');
-    title.className = 'cr-spotlight-title';
-    title.textContent = spotlight.slug;
-    const cnt = document.createElement('span');
-    cnt.className = 'cr-spotlight-count';
-    cnt.textContent = (spotlight.auto || 0) + ' auto / ' + (spotlight.total || 0) + ' commits';
-    title.appendChild(cnt);
-    box.appendChild(title);
-    const feed = document.createElement('div');
-    feed.className = 'cr-feed';
-    for (const e of (spotlight.events || [])) feed.appendChild(crBuildTimelineRow(e, false));
-    box.appendChild(feed);
-    container.appendChild(box);
+    section.appendChild(head);
+    for (const s of panels) {
+      if (!(s.events || []).length) continue;
+      const box = document.createElement('div');
+      box.className = 'cr-spotlight';
+      const title = document.createElement('div');
+      title.className = 'cr-spotlight-title';
+      title.textContent = s.slug;
+      const cnt = document.createElement('span');
+      cnt.className = 'cr-spotlight-count';
+      cnt.textContent = (s.auto || 0) + ' auto / ' + (s.total || 0) + ' commits';
+      title.appendChild(cnt);
+      box.appendChild(title);
+      const feed = document.createElement('div');
+      feed.className = 'cr-feed';
+      if (s.auto === 0) {
+        const armed = document.createElement('div');
+        armed.className = 'cr-feed-row';
+        const armedLine = document.createElement('span');
+        armedLine.className = 'cr-feed-line';
+        armedLine.style.opacity = '0.7';
+        armedLine.textContent = 'armed - no autonomous builds merged yet (' + s.total + ' human commits)';
+        armed.appendChild(armedLine);
+        feed.appendChild(armed);
+      }
+      for (const e of (s.events || [])) feed.appendChild(crBuildTimelineRow(e, false));
+      box.appendChild(feed);
+      section.appendChild(box);
+    }
   }
 
   const head2 = document.createElement('div');
   head2.className = 'cr-subhead';
   head2.textContent = 'Construction timeline';
-  container.appendChild(head2);
+  section.appendChild(head2);
+
+  const filterBar = document.createElement('div');
+  filterBar.className = 'cr-filter';
+  const filters = ['all', 'auto', 'human'];
+  for (const f of filters) {
+    const btn = document.createElement('button');
+    btn.textContent = f;
+    btn.className = crTimelineFilter === f ? 'active' : '';
+    btn.addEventListener('click', () => { crTimelineFilter = f; renderConstructionTimeline(crTimelineData.container, crTimelineData.withCR); });
+    filterBar.appendChild(btn);
+  }
+  section.appendChild(filterBar);
+
   const tlWrap = document.createElement('div');
   tlWrap.className = 'cr-feed';
-  for (const e of events.slice(0, 40)) tlWrap.appendChild(crBuildTimelineRow(e, true));
-  container.appendChild(tlWrap);
+  const applyFilter = () => {
+    tlWrap.textContent = '';
+    const filtered = crTimelineFilter === 'all' ? events : events.filter((e) => e.kind === crTimelineFilter);
+    for (const e of filtered.slice(0, 40)) tlWrap.appendChild(crBuildTimelineRow(e, true));
+    if (!filtered.length) tlWrap.textContent = 'No builds recorded yet.';
+  };
+  section.appendChild(tlWrap);
+  applyFilter();
+
+  container.appendChild(section);
 }
 
 function renderStuckPatterns(gist) {
