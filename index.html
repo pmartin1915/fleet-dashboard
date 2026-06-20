@@ -256,6 +256,23 @@
   #controlRoomPanel {
     --cr-steel-2: #0e0f16; --cr-amber: #ffb454; --cr-label: #7e88ac;
   }
+  /* COMPOUNDING master lamp on the public mirror: answers "is it landing code?"
+     so green/liveness cannot hide a dead compound loop. */
+  #controlRoomPanel .cr-compounding {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+    margin: 8px 0 12px; padding: 9px 13px; border-radius: 5px;
+    border: 1px solid #000; border-left-width: 5px; font-size: 11px; color: var(--cr-label);
+    background: linear-gradient(180deg, #15161f, var(--cr-steel-2));
+    box-shadow: inset 1px 1px 0 #3a3f55, inset -1px -1px 0 #05060a, 0 2px 4px rgba(0,0,0,0.4);
+  }
+  #controlRoomPanel .cr-compounding.compounding { border-left-color: var(--green); }
+  #controlRoomPanel .cr-compounding.stalled { border-left-color: var(--red); box-shadow: 0 0 12px rgba(255,80,80,0.25), inset 1px 1px 0 #3a3f55; }
+  #controlRoomPanel .cr-compounding.idle { border-left-color: #2c3047; }
+  #controlRoomPanel .cr-comp-badge { font-weight: 800; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 1px 0 #000; }
+  #controlRoomPanel .cr-compounding.compounding .cr-comp-badge { color: var(--green); }
+  #controlRoomPanel .cr-compounding.stalled .cr-comp-badge { color: var(--red); }
+  #controlRoomPanel .cr-compounding.idle .cr-comp-badge { color: var(--cr-label); }
+  #controlRoomPanel .cr-comp-detail { color: var(--cr-amber); font-variant-numeric: tabular-nums; }
   .cr-projects { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
   .cr-chip {
     display: flex; align-items: center; gap: 7px;
@@ -1728,6 +1745,44 @@ function renderControlRoom(fleetSnaps) {
     `CONTROL ROOM — live across ${withCR.length} ${withCR.length === 1 ? 'machine' : 'machines'} ` +
     `(STAGE = relay position per SYSTEM-MAP s2; state = last phase/outcome)`;
   container.appendChild(header);
+
+  // COMPOUNDING banner: is the fleet actually LANDING code on build repos? Stops
+  // green/liveness from masking a dead compound loop. Build-repo data is
+  // laptop-only, so pick the machine that reports build repos (worst status wins).
+  let comp = null;
+  const COMP_RANK = { stalled: 3, compounding: 2, idle: 1 };
+  for (const s of withCR) {
+    const c = s.control_room.compounding;
+    if (c && Array.isArray(c.buildRepos) && c.buildRepos.length) {
+      if (!comp || (COMP_RANK[c.status] || 0) > (COMP_RANK[comp.status] || 0)) comp = c;
+    }
+  }
+  if (comp) {
+    const cb = document.createElement('div');
+    cb.className = 'cr-compounding ' + (comp.status || 'idle');
+    const label = comp.status === 'compounding' ? 'COMPOUNDING'
+      : comp.status === 'stalled' ? 'COMPOUNDING STALLED' : 'COMPOUNDING IDLE';
+    const a = comp.authored || {};
+    const mergeTxt = comp.daysSinceLastCompoundMerge === null
+      ? 'no compound merge in tracked window'
+      : 'last compound merge ' + comp.daysSinceLastCompoundMerge + 'd ago';
+    const rateTxt = comp.compoundMergeRate === null
+      ? 'feature/fix PRs: none tracked'
+      : 'feature/fix merge-rate ' + Math.round(comp.compoundMergeRate * 100) + '% ('
+        + comp.trackedRefactorMerged + '/' + comp.trackedRefactorTotal + ')';
+    const badge = document.createElement('span');
+    badge.className = 'cr-comp-badge';
+    badge.textContent = label;
+    const detail = document.createElement('span');
+    detail.className = 'cr-comp-detail';
+    detail.textContent = mergeTxt + ' · ' + rateTxt
+      + ' · authored ' + comp.windowDays + 'd: ' + (a.success || 0) + ' ok / '
+      + (a.reverted || 0) + ' reverted / ' + (a.error || 0) + ' err'
+      + ' · repos: ' + comp.buildRepos.join(', ');
+    cb.appendChild(badge);
+    cb.appendChild(detail);
+    container.appendChild(cb);
+  }
 
   if (projMap.size > 0) {
     const projWrap = document.createElement('div');
