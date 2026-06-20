@@ -266,10 +266,12 @@
     box-shadow: inset 1px 1px 0 #3a3f55, inset -1px -1px 0 #05060a, 0 2px 4px rgba(0,0,0,0.4);
   }
   #controlRoomPanel .cr-compounding.compounding { border-left-color: var(--green); }
+  #controlRoomPanel .cr-compounding.compounding-manual { border-left-color: var(--amber); }
   #controlRoomPanel .cr-compounding.stalled { border-left-color: var(--red); box-shadow: 0 0 12px rgba(255,80,80,0.25), inset 1px 1px 0 #3a3f55; }
   #controlRoomPanel .cr-compounding.idle { border-left-color: #2c3047; }
   #controlRoomPanel .cr-comp-badge { font-weight: 800; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 1px 0 #000; }
   #controlRoomPanel .cr-compounding.compounding .cr-comp-badge { color: var(--green); }
+  #controlRoomPanel .cr-compounding.compounding-manual .cr-comp-badge { color: var(--amber); }
   #controlRoomPanel .cr-compounding.stalled .cr-comp-badge { color: var(--red); }
   #controlRoomPanel .cr-compounding.idle .cr-comp-badge { color: var(--cr-label); }
   #controlRoomPanel .cr-comp-detail { color: var(--cr-amber); font-variant-numeric: tabular-nums; }
@@ -1750,7 +1752,7 @@ function renderControlRoom(fleetSnaps) {
   // green/liveness from masking a dead compound loop. Build-repo data is
   // laptop-only, so pick the machine that reports build repos (worst status wins).
   let comp = null;
-  const COMP_RANK = { stalled: 3, compounding: 2, idle: 1 };
+  const COMP_RANK = { stalled: 3, 'compounding-manual': 3, compounding: 2, idle: 1 };
   for (const s of withCR) {
     const c = s.control_room.compounding;
     if (c && Array.isArray(c.buildRepos) && c.buildRepos.length) {
@@ -1761,6 +1763,7 @@ function renderControlRoom(fleetSnaps) {
     const cb = document.createElement('div');
     cb.className = 'cr-compounding ' + (comp.status || 'idle');
     const label = comp.status === 'compounding' ? 'COMPOUNDING'
+      : comp.status === 'compounding-manual' ? 'COMPOUNDING (MANUAL)'
       : comp.status === 'stalled' ? 'COMPOUNDING STALLED' : 'COMPOUNDING IDLE';
     const a = comp.authored || {};
     const mergeTxt = comp.daysSinceLastCompoundMerge === null
@@ -1770,12 +1773,14 @@ function renderControlRoom(fleetSnaps) {
       ? 'feature/fix PRs: none tracked'
       : 'feature/fix merge-rate ' + Math.round(comp.compoundMergeRate * 100) + '% ('
         + comp.trackedRefactorMerged + '/' + comp.trackedRefactorTotal + ')';
+    const autoTxt = (comp.autonomousMerges || 0) + ' autonomous / ' + (comp.manualMerges || 0) + ' manual merge' + ((comp.manualMerges || 0) === 1 ? '' : 's') + ' ' + comp.windowDays + 'd';
     const badge = document.createElement('span');
     badge.className = 'cr-comp-badge';
     badge.textContent = label;
     const detail = document.createElement('span');
     detail.className = 'cr-comp-detail';
     detail.textContent = mergeTxt + ' · ' + rateTxt
+      + ' · ' + autoTxt
       + ' · authored ' + comp.windowDays + 'd: ' + (a.success || 0) + ' ok / '
       + (a.reverted || 0) + ' reverted / ' + (a.error || 0) + ' err'
       + ' · repos: ' + comp.buildRepos.join(', ');
