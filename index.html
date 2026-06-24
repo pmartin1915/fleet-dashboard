@@ -661,6 +661,74 @@
   .error-box small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 10px; }
   .footer { font-size: 10px; color: var(--text-dim); text-align: center; margin-top: 20px; }
   .footer a { color: var(--accent); text-decoration: none; }
+
+  /* === Model tier ladder === */
+  #modelTierPanel .mt-ladder {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px;
+  }
+  #modelTierPanel .mt-rung {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 5px 10px; font-size: 10px;
+  }
+  #modelTierPanel .mt-rung.active {
+    border-color: var(--accent); background: rgba(122,162,247,0.12);
+  }
+  #modelTierPanel .mt-rung.dormant { opacity: 0.45; }
+  #modelTierPanel .mt-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  #modelTierPanel .mt-dot.t0 { background: var(--cyan); }
+  #modelTierPanel .mt-dot.t1 { background: #7fffa6; }
+  #modelTierPanel .mt-dot.t2 { background: var(--yellow); }
+  #modelTierPanel .mt-dot.t3 { background: #ff9e64; }
+  #modelTierPanel .mt-dot.t4 { background: var(--red); }
+  #modelTierPanel .mt-name { font-weight: 600; color: var(--text); }
+  #modelTierPanel .mt-cost { color: var(--text-dim); margin-left: 4px; }
+  #modelTierPanel .mt-current {
+    margin-top: 10px; padding: 10px; background: var(--surface2);
+    border-radius: 6px; border: 1px solid var(--border); font-size: 11px;
+  }
+  #modelTierPanel .mt-current-label { color: var(--text-dim); margin-bottom: 4px; }
+  #modelTierPanel .mt-current-row { display: flex; flex-wrap: wrap; gap: 12px; }
+  #modelTierPanel .mt-current-row span { color: var(--text); }
+  #modelTierPanel .mt-current-row code {
+    background: var(--bg); padding: 1px 5px; border-radius: 3px; color: var(--accent);
+  }
+
+  /* === Error context cards === */
+  #errorContextPanel .ec-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left: 3px solid var(--red); border-radius: 6px;
+    padding: 12px; margin-bottom: 10px; font-size: 11px;
+  }
+  #errorContextPanel .ec-card.warn { border-left-color: var(--yellow); }
+  #errorContextPanel .ec-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+    margin-bottom: 8px;
+  }
+  #errorContextPanel .ec-title { font-weight: 600; color: var(--text); }
+  #errorContextPanel .ec-meta { color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+  #errorContextPanel .ec-copy {
+    background: var(--accent); color: var(--bg); border: none; border-radius: 4px;
+    padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer;
+    font-family: inherit; flex-shrink: 0;
+  }
+  #errorContextPanel .ec-copy:active { opacity: 0.8; }
+  #errorContextPanel .ec-action {
+    color: var(--yellow); margin-bottom: 8px; padding: 6px 8px;
+    background: rgba(224,175,104,0.08); border-radius: 4px;
+  }
+  #errorContextPanel .ec-pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px; font-family: inherit; font-size: 10px; color: var(--text);
+    white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+    margin: 0;
+  }
+  #errorContextPanel .ec-toggle {
+    color: var(--accent); font-size: 10px; cursor: pointer; margin-top: 6px;
+    display: inline-block;
+  }
 </style>
 </head>
 <body>
@@ -683,10 +751,12 @@
      below as detail-level companions per PLAN-dashboard-redesign.md §rollout
      step 4. -->
 <div id="healthBanner"></div>
+<div id="modelTierPanel" class="top-section" style="display:none"></div>
 <div id="whatsHappening" class="top-section" style="display:none"></div>
 <div id="todaysWork" class="top-section" style="display:none"></div>
 <div id="rotationPanel" class="top-section" style="display:none"></div>
 <div id="attentionPanel" class="top-section" style="display:none"></div>
+<div id="errorContextPanel" class="top-section" style="display:none"></div>
 <div id="expectedFleet" class="expected-fleet" style="display:none"></div>
 <div id="autoDigestPanel" class="auto-digest" style="display:none"></div>
 <div id="stuckPatternsPanel" class="auto-digest" style="display:none"></div>
@@ -3059,6 +3129,213 @@ function renderAttention(gist, fleetSnaps) {
   }
 }
 
+// === Model tier ladder ===
+// Shows the dispatcher's model-routing ladder and which tier is currently
+// active across the fleet. Claude is always shown as dormant because this
+// streamlined view focuses on free-tier consistency.
+function renderModelTier(fleetSnaps) {
+  const container = document.getElementById('modelTierPanel');
+  container.innerHTML = '';
+
+  const rungs = [
+    { tier: 0, name: 'Local', cost: 'Ollama / local GPU', dormant: false },
+    { tier: 1, name: 'Free primary', cost: 'GLM-4-Flash', dormant: false },
+    { tier: 2, name: 'Free fallback', cost: 'Gemini / Mistral / Codestral', dormant: false },
+    { tier: 3, name: 'Kimi', cost: '$19/mo Allegretto', dormant: true },
+    { tier: 4, name: 'Claude', cost: 'Max subscription', dormant: true },
+  ];
+
+  // Determine active tier from the most recent fleet snap that has a model.
+  let activeTier = -1;
+  let currentModel = null;
+  let currentTaskClass = null;
+  let currentMachine = null;
+  let fallbackReason = null;
+  let currentTs = 0;
+  for (const f of fleetSnaps || []) {
+    const model = f.last_model;
+    if (!model) continue;
+    const tier = modelTierFromName(model);
+    const ts = f.last_run_ts ? new Date(f.last_run_ts).getTime() : 0;
+    if (ts && ts > currentTs) {
+      activeTier = tier;
+      currentModel = model;
+      currentTaskClass = f.last_task_class;
+      currentMachine = f.machine;
+      fallbackReason = f.last_selector_fallback_reason;
+      currentTs = ts;
+    }
+  }
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = 'Model tier / routing';
+  container.appendChild(header);
+
+  const ladder = document.createElement('div');
+  ladder.className = 'mt-ladder';
+  for (const r of rungs) {
+    const active = r.tier === activeTier;
+    const el = document.createElement('div');
+    el.className = `mt-rung ${active ? 'active' : ''} ${r.dormant ? 'dormant' : ''}`;
+    el.innerHTML = `<span class="mt-dot t${r.tier}"></span><span class="mt-name">${esc(r.name)}</span><span class="mt-cost">${esc(r.cost)}</span>`;
+    ladder.appendChild(el);
+  }
+  container.appendChild(ladder);
+
+  if (currentModel) {
+    const cur = document.createElement('div');
+    cur.className = 'mt-current';
+    const label = document.createElement('div');
+    label.className = 'mt-current-label';
+    label.textContent = fallbackReason
+      ? `Latest dispatch used fallback routing:`
+      : `Latest dispatch routed to:`;
+    cur.appendChild(label);
+    const row = document.createElement('div');
+    row.className = 'mt-current-row';
+    row.innerHTML = `
+      <span>Model: <code>${esc(currentModel)}</code></span>
+      <span>Tier: <code>${esc(String(activeTier))}</code></span>
+      ${currentTaskClass ? `<span>Task class: <code>${esc(currentTaskClass)}</code></span>` : ''}
+      ${currentMachine ? `<span>Machine: <code>${esc(MACHINE_NAMES[currentMachine] || currentMachine)}</code></span>` : ''}
+      ${fallbackReason ? `<span>Fallback: <code>${esc(fallbackReason)}</code></span>` : ''}
+    `;
+    cur.appendChild(row);
+    container.appendChild(cur);
+  }
+
+  container.style.display = '';
+}
+
+function modelTierFromName(model) {
+  const m = String(model || '').toLowerCase();
+  if (m.startsWith('local/')) return 0;
+  if (m.startsWith('glm-4')) return 1;
+  if (m.startsWith('gemini') || m.startsWith('mistral') || m.startsWith('codestral')) return 2;
+  if (m.includes('kimi')) return 3;
+  if (m.includes('claude')) return 4;
+  return 2; // unknown free-tier fallback
+}
+
+// === Error context cards ===
+// Renders the most recent structured error_context blocks from the fleet
+// snapshots, with a one-click copy button for pasting into Claude/Kimi.
+function renderErrorContext(fleetSnaps) {
+  const container = document.getElementById('errorContextPanel');
+  container.innerHTML = '';
+
+  const cards = [];
+  for (const f of fleetSnaps || []) {
+    const ctx = f.last_error_context;
+    if (!ctx || typeof ctx !== 'object') continue;
+    cards.push({ ts: f.last_error_ts || f.last_run_ts, machine: f.machine, ctx });
+  }
+  cards.sort((a, b) => {
+    const ta = a.ts ? new Date(a.ts).getTime() : 0;
+    const tb = b.ts ? new Date(b.ts).getTime() : 0;
+    return tb - ta;
+  });
+
+  if (cards.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = `Errors needing attention (${cards.length})`;
+  container.appendChild(header);
+
+  for (const c of cards.slice(0, 3)) {
+    const ctx = c.ctx;
+    const card = document.createElement('div');
+    card.className = `ec-card ${ctx.severity === 'warn' ? 'warn' : ''}`;
+
+    const head = document.createElement('div');
+    head.className = 'ec-head';
+    const left = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'ec-title';
+    title.textContent = ctx.summary || ctx.reason || 'Dispatch error';
+    left.appendChild(title);
+    const meta = document.createElement('div');
+    meta.className = 'ec-meta';
+    const parts = [];
+    if (c.ts) parts.push(ago(c.ts));
+    if (c.machine) parts.push(MACHINE_NAMES[c.machine] || c.machine);
+    if (ctx.phase) parts.push(`phase: ${ctx.phase}`);
+    if (ctx.model_tier_label) parts.push(ctx.model_tier_label);
+    meta.textContent = parts.join(' • ');
+    left.appendChild(meta);
+    head.appendChild(left);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'ec-copy';
+    copyBtn.textContent = 'Copy for Claude/Kimi';
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(ctx.copy_context || formatCopyContext(ctx)).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = 'Copy for Claude/Kimi', 1500);
+      }).catch(() => {
+        copyBtn.textContent = 'Copy failed';
+      });
+    };
+    head.appendChild(copyBtn);
+    card.appendChild(head);
+
+    if (ctx.suggested_action) {
+      const action = document.createElement('div');
+      action.className = 'ec-action';
+      action.textContent = `Suggested: ${ctx.suggested_action}`;
+      card.appendChild(action);
+    }
+
+    const body = document.createElement('pre');
+    body.className = 'ec-pre';
+    body.textContent = ctx.copy_context || formatCopyContext(ctx);
+    body.style.display = 'none';
+    card.appendChild(body);
+
+    const toggle = document.createElement('span');
+    toggle.className = 'ec-toggle';
+    toggle.textContent = 'Show full context';
+    toggle.onclick = () => {
+      const hidden = body.style.display === 'none';
+      body.style.display = hidden ? '' : 'none';
+      toggle.textContent = hidden ? 'Hide full context' : 'Show full context';
+    };
+    card.appendChild(toggle);
+
+    container.appendChild(card);
+  }
+}
+
+function formatCopyContext(ctx) {
+  // Fallback formatter for snapshots that pre-date the copy_context field.
+  const lines = [
+    '## Dispatcher failure context',
+    '',
+    `- **Project:** \`${ctx.project || 'unknown'}\``,
+    `- **Task:** \`${ctx.task || 'unknown'}\``,
+    `- **Phase:** \`${ctx.phase || 'unknown'}\``,
+    `- **Outcome:** \`${ctx.outcome || 'unknown'}\``,
+    `- **Reason:** ${ctx.reason || 'unknown'}`,
+  ];
+  if (ctx.model) lines.push(`- **Model:** \`${ctx.model}\` (${ctx.model_tier_label || 'tier unknown'})`);
+  if (ctx.audit_model) lines.push(`- **Audit model:** \`${ctx.audit_model}\``);
+  lines.push('', '### Suggested action', ctx.suggested_action || 'Investigate the details below.');
+  if (ctx.command) {
+    const cmd = Array.isArray(ctx.command) ? ctx.command.join(' ') : String(ctx.command);
+    lines.push('', '### Command that failed', '```bash', cmd, '```');
+  }
+  if (ctx.stdout_tail) lines.push('', '### Stdout tail', '```', String(ctx.stdout_tail).slice(-2000), '```');
+  if (ctx.stderr_tail) lines.push('', '### Stderr tail', '```', String(ctx.stderr_tail).slice(-2000), '```');
+  if (ctx.exit_code != null) lines.push('', `- **Exit code:** ${ctx.exit_code}`);
+  return lines.join('\n') + '\n';
+}
+
 // === Render ===
 
 function refreshMachineNames(gist) {
@@ -3098,15 +3375,17 @@ function render(gist) {
     .filter((snap) => snap && typeof snap.machine === 'string');
 
   // === Top sections (Step 2 redesign) ===
-  // Order is the load-bearing part: banner → what's happening → today's
-  // work → rotation → things needing attention. Anything below this comment
-  // is the legacy detail-level panel set, kept verbatim per the plan's
-  // rollout step 4 (still useful, just no longer top-level).
+  // Order is the load-bearing part: banner → model tier → what's happening →
+  // today's work → rotation → things needing attention → error context cards.
+  // Anything below this comment is the legacy detail-level panel set, kept
+  // verbatim per the plan's rollout step 4 (still useful, just no longer top-level).
   renderBannerV2(gist, fleetSnaps);
+  renderModelTier(fleetSnaps);
   renderWhatsHappening(fleetSnaps);
   renderTodaysWork(gist, fleetSnaps);
   renderRotation(gist);
   renderAttention(gist, fleetSnaps);
+  renderErrorContext(fleetSnaps);
 
   // Expected-fleet panel (Proposal D) — kept as detail-level companion to
   // the new attention panel; the attention panel surfaces only stale/missing
