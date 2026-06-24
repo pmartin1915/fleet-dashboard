@@ -3030,7 +3030,7 @@ function renderAttention(gist, fleetSnaps) {
     } else {
       detail = 'Open the per-machine card below for the diagnostics drawer.';
     }
-    const entry = { tier: 'err', headline, detail };
+    const entry = { tier: 'err', headline, detail, machine: f.machine };
     entries.push(entry);
     if (f.machine) ruleAEntryByMachine.set(f.machine, entry);
   }
@@ -3049,6 +3049,7 @@ function renderAttention(gist, fleetSnaps) {
         tier: 'warn',
         headline: `${friendly} hasn't checked in for ${ageH}.`,
         detail: 'Could be: PC asleep, scheduled task disabled, or canary failing. Open the laptop / PC and check the dispatcher service.',
+        machine: m.name,
       });
     }
     for (const m of verdict.missing || []) {
@@ -3058,6 +3059,7 @@ function renderAttention(gist, fleetSnaps) {
         tier: 'err',
         headline: `${friendly} has no fleet file at all.`,
         detail: 'Either it has never run, or the gist write is failing. Check GIST_AUTH_TOKEN scope on that machine.',
+        machine: m.name,
       });
     }
   }
@@ -3097,6 +3099,7 @@ function renderAttention(gist, fleetSnaps) {
       tier,
       headline: `${friendly} is ${health.state}: ${sf.reason}.`,
       detail: `Failure ctx: ${ctx}.`,
+      machine: f.machine,
     });
   }
 
@@ -3124,6 +3127,24 @@ function renderAttention(gist, fleetSnaps) {
       det.className = 'att-detail';
       det.textContent = e.detail;
       row.appendChild(det);
+    }
+    if (e.machine) {
+      const jump = document.createElement('a');
+      jump.className = 'att-detail';
+      jump.href = '#machine-' + esc(e.machine);
+      jump.style.color = 'var(--accent)';
+      jump.style.marginTop = '4px';
+      jump.style.display = 'inline-block';
+      jump.textContent = 'Show machine details →';
+      jump.onclick = (ev) => {
+        ev.preventDefault();
+        const card = document.getElementById('machine-' + esc(e.machine));
+        if (card) {
+          card.open = true;
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      };
+      row.appendChild(jump);
     }
     container.appendChild(row);
   }
@@ -3438,6 +3459,7 @@ function render(gist) {
 
     const card = document.createElement('details');
     card.className = 'card machine-collapsed';
+    card.id = 'machine-' + esc(rawName);
     // Default-open broken machines. The whole point of demoting the cards is
     // to keep the 95% case quiet, but the operator's #1 task when a machine
     // breaks is reading the error message — forcing two clicks (expand card,
