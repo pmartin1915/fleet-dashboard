@@ -3555,6 +3555,27 @@ function render(gist) {
       }
     }
 
+    // Project-level auto-pull divergence surface. A diverged build clone that
+    // got auto-reset is exactly the kind of loud signal the operator needs to
+    // see; a diverged-but-not-reset clone also appears so the dashboard shows
+    // why builds are being skipped. Mirrors scripts/lib/fleet.mjs.
+    if (fleet.reset_clones?.length) {
+      const slugs = fleet.reset_clones.map((c) => c.slug).join(", ");
+      rows += `<div class="row"><span class="label">Auto-pull</span><span class="value error">auto-reset to origin: ${esc(slugs)}</span></div>`;
+    }
+    if (fleet.diverged_clones?.length) {
+      const slugs = fleet.diverged_clones.join(", ");
+      rows += `<div class="row"><span class="label">Auto-pull</span><span class="value error">DIVERGED (build skipped): ${esc(slugs)}</span></div>`;
+    }
+    // A FAILED self-heal (backup ok, `reset --hard` failed) is the most
+    // important state to escalate — the clone is left in an ambiguous state
+    // and needs a human. Was previously only a console.warn; see
+    // scripts/lib/project-auto-pull.mjs bucketAutoPullResults / IDEAS.md 2026-06-30.
+    if (fleet.failed_reset_clones?.length) {
+      const slugs = fleet.failed_reset_clones.map((c) => c.slug).join(", ");
+      rows += `<div class="row"><span class="label">Auto-pull</span><span class="value error">SELF-HEAL FAILED (needs human): ${esc(slugs)}</span></div>`;
+    }
+
     body.innerHTML = rows;
 
     // Daily-quota counter — append after rows, before burn bars. Only when
