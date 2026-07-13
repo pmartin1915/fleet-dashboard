@@ -564,6 +564,15 @@
     margin-top: 2px; line-height: 1.3; word-break: break-word;
   }
 
+  /* Recent substitutions panel. */
+  .rs-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .rs-table th, .rs-table td {
+    text-align: left; padding: 4px 6px; border-top: 1px solid rgba(192,202,245,0.05);
+    color: var(--text-dim); word-break: break-word;
+  }
+  .rs-table th { color: var(--text); font-weight: 600; border-top: none; }
+  .rs-table tbody tr:first-child td { border-top: none; }
+
   .pending-merges { margin-bottom: 14px; }
   .pm-header {
     font-size: 11px; font-weight: 600; color: var(--cyan);
@@ -752,8 +761,10 @@
      step 4. -->
 <div id="healthBanner"></div>
 <div id="modelTierPanel" class="top-section" style="display:none"></div>
+<div id="recentSubstitutionsPanel" class="top-section" style="display:none"></div>
 <div id="whatsHappening" class="top-section" style="display:none"></div>
 <div id="todaysWork" class="top-section" style="display:none"></div>
+<div id="shippedPanel" class="top-section" style="display:none"></div>
 <div id="rotationPanel" class="top-section" style="display:none"></div>
 <div id="attentionPanel" class="top-section" style="display:none"></div>
 <div id="errorContextPanel" class="top-section" style="display:none"></div>
@@ -933,6 +944,7 @@ function errorHint(reason, detail) {
     return 'Gemini daily quota hit. Will retry after free-tier reset.';
   }
   if (r === 'selector-failed') return 'Check GEMINI_API_KEY env / quota status.';
+  if (r === 'all-projects-saturated') return 'Not a provider issue -- queues are full. Check whether PRs are merging/closing to drain the backlog.';
   if (r === 'worker-failed') return 'Worker phase. See "Phase" in Diagnostics for the gate.';
   if (r === 'verify-commit-failed') return 'Tests or typecheck failed in the project worktree.';
   if (r === 'gist-write-failed') return 'Status gist write failed. Check GIST_AUTH_TOKEN scope.';
@@ -951,6 +963,8 @@ function reasonToSentence(reason, _fleet) {
   switch (reason) {
     case 'selector-failed':
       return "Couldn't pick a task. Selector returned nothing.";
+    case 'all-projects-saturated':
+      return 'Queues are full -- waiting for PRs to drain, not stuck.';
     case 'daily-quota-reached':
       return 'Done for the day. Resets at UTC midnight.';
     case 'user-active':
@@ -2855,10 +2869,18 @@ function renderTodaysWork(gist, fleetSnaps) {
   const pmEntries = Array.isArray(pmData?.entries) ? pmData.entries : [];
   const pmInflight = pmEntries.filter((e) => e && !e.completed && e.next_deadline_ms != null);
 
+  // PRs merged to main in the last 24h (from the fleet snapshots' shipped
+  // ledger — same source as the SHIPPED panel below). Computed before the
+  // hide/show decision so a merge-only day still shows the panel.
+  const mergedToday = collectFleetShipped(fleetSnaps).filter((r) => {
+    const ms = Date.parse(r.mergedAt);
+    return Number.isFinite(ms) && Date.now() - ms <= 86400000;
+  }).length;
+
   // Hide the section entirely when there's nothing to say (cold start —
   // before any machine has uploaded today's counters and before the first
   // auto-digest payload). Otherwise render whichever rows have data.
-  const hasAnyData = usedSum > 0 || commits.length > 0 || pmInflight.length > 0 || hasCap;
+  const hasAnyData = usedSum > 0 || commits.length > 0 || pmInflight.length > 0 || hasCap || mergedToday > 0;
   if (!hasAnyData) {
     container.style.display = 'none';
     return;
@@ -2915,6 +2937,21 @@ function renderTodaysWork(gist, fleetSnaps) {
     container.appendChild(row);
   }
 
+  // Row 2b: PRs merged to main in the last 24h (mergedToday computed above).
+  if (mergedToday > 0) {
+    const row = document.createElement('div');
+    row.className = 'tw-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = 'Merged to main';
+    const val = document.createElement('span');
+    val.className = 'tw-value accent';
+    val.textContent = `${mergedToday} PR${mergedToday === 1 ? '' : 's'} (24h)`;
+    row.appendChild(lbl);
+    row.appendChild(val);
+    container.appendChild(row);
+  }
+
   // Row 3: pending merges (count + up to 3 quick links).
   if (pmInflight.length > 0) {
     const row = document.createElement('div');
@@ -2935,6 +2972,115 @@ function renderTodaysWork(gist, fleetSnaps) {
     row.appendChild(lbl);
     row.appendChild(val);
     container.appendChild(row);
+  }
+}
+
+// "SHIPPED" — merged-PR ledger from the per-machine fleet snapshots'
+// control_room.shipped (buildShippedWork in control-room.mjs; rides the gist
+// so this static mirror needs no local merge-tracker). Union across machines,
+// deduped by slug#prNumber — several machines can track the same repo.
+// Null-safe against pre-2026-07-13 snapshots without `shipped` (rollout skew
+// across 4 machines is guaranteed). Hidden until any machine reports a merge.
+function collectFleetShipped(fleetSnaps) {
+  const seen = new Set();
+  const rows = [];
+  for (const f of fleetSnaps || []) {
+    const byProject = f?.control_room?.shipped?.byProject;
+    if (!byProject || typeof byProject !== 'object') continue;
+    for (const [slug, items] of Object.entries(byProject)) {
+      if (!Array.isArray(items)) continue;
+      for (const it of items) {
+        if (!it || !it.mergedAt) continue;
+        const key = it.prNumber != null ? `${slug}#${it.prNumber}` : `${slug}${it.mergedAt}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({
+          slug,
+          prNumber: it.prNumber ?? null,
+          title: it.title ?? null,
+          url: it.url ?? null,
+          mergedAt: it.mergedAt,
+          autonomous: it.autonomous === true,
+          task: it.task ?? null,
+        });
+      }
+    }
+  }
+  rows.sort((a, b) => String(b.mergedAt).localeCompare(String(a.mergedAt)));
+  return rows;
+}
+
+function renderShipped(fleetSnaps) {
+  const container = document.getElementById('shippedPanel');
+  container.innerHTML = '';
+
+  const rows = collectFleetShipped(fleetSnaps);
+  if (rows.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const now = Date.now();
+  const DAY = 86400000;
+  const in7d = rows.filter((r) => {
+    const ms = Date.parse(r.mergedAt);
+    return Number.isFinite(ms) && now - ms <= 7 * DAY;
+  }).length;
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = `Shipped — merged to main (${rows.length} in 30d, ${in7d} in 7d)`;
+  container.appendChild(header);
+
+  for (const r of rows.slice(0, 12)) {
+    const row = document.createElement('div');
+    row.className = 'tw-row';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = r.slug;
+    row.appendChild(lbl);
+
+    const val = document.createElement('span');
+    val.className = 'tw-value';
+    const parts = [];
+    if (r.prNumber != null) parts.push('#' + r.prNumber);
+    parts.push(r.title || r.task || '(no title)');
+    const text = parts.join(' · ');
+    // Scheme check: tracker titles/urls are external text; only https links
+    // become anchors (a javascript: href would execute — textContent alone
+    // doesn't cover href).
+    if (typeof r.url === 'string' && /^https:\/\//.test(r.url)) {
+      const a = document.createElement('a');
+      a.setAttribute('href', r.url);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener');
+      a.textContent = text;
+      val.appendChild(a);
+    } else {
+      val.appendChild(document.createTextNode(text));
+    }
+    val.appendChild(document.createTextNode(' · ' + (r.autonomous ? 'auto' : 'manual')));
+    const ms = Date.parse(r.mergedAt);
+    if (Number.isFinite(ms)) {
+      val.appendChild(document.createTextNode(' · ' + agoMs(ms)));
+    }
+    row.appendChild(val);
+    container.appendChild(row);
+  }
+  if (rows.length > 12) {
+    const more = document.createElement('div');
+    more.className = 'tw-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'tw-label';
+    lbl.textContent = '';
+    const val = document.createElement('span');
+    val.className = 'tw-value';
+    val.textContent = `...and ${rows.length - 12} more in the last 30 days`;
+    more.appendChild(lbl);
+    more.appendChild(val);
+    container.appendChild(more);
   }
 }
 
@@ -3103,6 +3249,34 @@ function renderAttention(gist, fleetSnaps) {
     });
   }
 
+  // Rule D: rotation attrition — disabled projects per machine (fleet.mjs
+  // buildDisabledProjects, 2026-07-13). The auto-disable ratchet quietly bled
+  // perrypc down to 1 live project of 10 with no surface showing it; this
+  // rule makes attrition a first-class attention item. warn when any project
+  // is disabled; err when at most one rotation project survives.
+  for (const f of fleetSnaps || []) {
+    const disabled = Array.isArray(f?.disabled_projects) ? f.disabled_projects : [];
+    const total = Number(f?.rotation_total) || 0;
+    if (!f?.machine || disabled.length === 0 || total === 0) continue;
+    const friendly = MACHINE_NAMES[f.machine] || f.machine || '(unknown)';
+    const survivors = total - disabled.length;
+    const tier = survivors <= 1 ? 'err' : 'warn';
+    const list = disabled.map((d) => {
+      const sinceMs = d?.since ? Date.parse(d.since) : NaN;
+      const ageD = Number.isFinite(sinceMs)
+        ? ` since ${Math.max(0, Math.floor((Date.now() - sinceMs) / 86400000))}d`
+        : '';
+      const kind = d?.kind === 'auto' ? 'auto' : 'operator';
+      return `${d?.slug ?? '?'} (${kind}${ageD})`;
+    }).join(', ');
+    entries.push({
+      tier,
+      headline: `${friendly}: ${disabled.length} of ${total} rotation projects disabled${survivors <= 1 ? ' — rotation nearly empty' : ''}.`,
+      detail: `Disabled: ${list}. Auto-disabled projects revive via reenabled_at stamp in that machine's config/local.json.`,
+      machine: f.machine,
+    });
+  }
+
   if (entries.length === 0) {
     container.style.display = 'none';
     return;
@@ -3237,6 +3411,68 @@ function modelTierFromName(model) {
   if (m.includes('kimi')) return 3;
   if (m.includes('claude')) return 4;
   return 2; // unknown free-tier fallback
+}
+
+// === Recent substitutions ===
+// Surfaces soft-substitute firing events (selector-fallback + autofix model
+// swaps) across the fleet. Each machine's recent_substitutions array lives in
+// health-<machine>.json (health.mjs computeHealth()), not the fleet-*.json
+// snapshot fleetSnaps is built from -- mirrors the health-<machine>.json read
+// pattern in renderAttention()'s Rule C above.
+function renderRecentSubstitutions(gist, fleetSnaps) {
+  const container = document.getElementById('recentSubstitutionsPanel');
+  container.innerHTML = '';
+
+  const rows = [];
+  for (const f of fleetSnaps || []) {
+    if (!f?.machine) continue;
+    // parseFile() returns {} on missing, never null.
+    const health = parseFile(gist, `health-${f.machine}.json`);
+    const subs = Array.isArray(health.recent_substitutions) ? health.recent_substitutions : [];
+    for (const s of subs) rows.push({ ...s, machine: f.machine });
+  }
+  rows.sort((a, b) => {
+    const ta = a.ts ? new Date(a.ts).getTime() : 0;
+    const tb = b.ts ? new Date(b.ts).getTime() : 0;
+    return tb - ta;
+  });
+
+  if (rows.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const header = document.createElement('div');
+  header.className = 'ts-header';
+  header.textContent = `Recent soft substitutions (${rows.length})`;
+  container.appendChild(header);
+
+  const table = document.createElement('table');
+  table.className = 'rs-table';
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>Time</th><th>Machine</th><th>Kind</th><th>From → To</th><th>Project / task</th><th>Reason</th></tr>';
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const r of rows.slice(0, 10)) {
+    const tr = document.createElement('tr');
+    const friendly = MACHINE_NAMES[r.machine] || r.machine || '(unknown)';
+    const from = present(r.from) ? esc(r.from) : '—';
+    const to = present(r.to) ? esc(r.to) : '—';
+    const projTask = [r.project, r.task].filter(present).join(' / ') || '—';
+    tr.innerHTML = `
+      <td>${r.ts ? esc(ago(r.ts)) : '—'}</td>
+      <td>${esc(friendly)}</td>
+      <td>${esc(r.kind || '—')}</td>
+      <td>${from} → ${to}</td>
+      <td>${esc(projTask)}</td>
+      <td>${present(r.reason) ? esc(r.reason) : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
 }
 
 // === Error context cards ===
@@ -3402,8 +3638,10 @@ function render(gist) {
   // verbatim per the plan's rollout step 4 (still useful, just no longer top-level).
   renderBannerV2(gist, fleetSnaps);
   renderModelTier(fleetSnaps);
+  renderRecentSubstitutions(gist, fleetSnaps);
   renderWhatsHappening(fleetSnaps);
   renderTodaysWork(gist, fleetSnaps);
+  renderShipped(fleetSnaps);
   renderRotation(gist);
   renderAttention(gist, fleetSnaps);
   renderErrorContext(fleetSnaps);
