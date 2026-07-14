@@ -3638,6 +3638,25 @@ function renderAttention(gist, fleetSnaps) {
     });
   }
 
+  // Rule C2: struggling machines — pipeline healthy but recent work reverted
+  // by the safety nets (health.mjs five-state model, 2026-07-14). These have
+  // no last_structural_failure by construction, so Rule C can't surface them;
+  // the health reason line carries the whole story. warn tier: model quality,
+  // not infra.
+  for (const f of fleetSnaps || []) {
+    if (!f?.machine) continue;
+    const health = parseFile(gist, `health-${f.machine}.json`);
+    if (health.state !== 'struggling') continue;
+    if (ruleAEntryByMachine.get(f.machine)) continue; // already listed for errors
+    const friendly = MACHINE_NAMES[f.machine] || f.machine || '(unknown)';
+    entries.push({
+      tier: 'warn',
+      headline: `${friendly} is struggling: recent work reverted by safety nets.`,
+      detail: health.reason || '',
+      machine: f.machine,
+    });
+  }
+
   // Rule D: rotation attrition — disabled projects per machine (fleet.mjs
   // buildDisabledProjects, 2026-07-13). The auto-disable ratchet quietly bled
   // perrypc down to 1 live project of 10 with no surface showing it; this
