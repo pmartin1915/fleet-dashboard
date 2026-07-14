@@ -22,9 +22,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#1a1b26">
+<meta name="theme-color" content="#f4f6f9">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Fleet">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
@@ -32,41 +32,65 @@
 <title>Dispatcher Fleet</title>
 <style>
   :root {
-    --bg: #1a1b26; --surface: #24283b; --surface2: #292e42; --border: #414868;
-    /* --text-dim bumped 2026-05-21 from #565f89 (~3.1:1 on --surface) to
-       #8892b0 (~5.2:1) so dim labels and detail text clear WCAG AA. */
-    --text: #c0caf5; --text-dim: #8892b0; --accent: #7aa2f7;
-    --green: #9ece6a; --yellow: #e0af68; --red: #f7768e; --cyan: #7dcfff;
+    /* Light-first token sheet (2026-07-13 readability redesign).
+       Contrast ratios, computed against the surface they sit on:
+         --text     #1c2433 on --surface #ffffff = 15.4:1 (AAA)
+         --text     #1c2433 on --bg      #f4f6f9 = 14.1:1 (AAA)
+         --text-dim #556179 on --surface #ffffff =  6.3:1 (AA)
+         --accent   #1d4ed8 on --surface #ffffff =  6.3:1 (AA)
+         --green    #1a7f37 on --surface #ffffff =  4.9:1 (AA)
+         --yellow   #9a6700 on --surface #ffffff =  4.9:1 (AA)  (amber INK, not neon)
+         --red      #b3261e on --surface #ffffff =  5.9:1 (AA)
+         --cyan     #0e7490 on --surface #ffffff =  5.0:1 (AA)
+       Status colors are dark inks paired with pale tint backgrounds
+       (--*-bg) — tinted chip + dark text, never light-on-light.
+       A future dark mode = one [data-theme="dark"] block overriding these
+       same custom properties; keep every rule below referencing tokens. */
+    --bg: #f4f6f9; --surface: #ffffff; --surface2: #eaeef4; --border: #d3dae4;
+    --text: #1c2433; --text-dim: #556179; --accent: #1d4ed8;
+    --green: #1a7f37; --yellow: #9a6700; --red: #b3261e; --cyan: #0e7490;
+    --amber: #9a6700;
+    --green-bg: #e6f4ea; --yellow-bg: #fcf3d7; --red-bg: #fbeae9;
+    --accent-bg: #e8effd;
+    --font-ui: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, system-ui, sans-serif;
+    --font-mono: 'Cascadia Code', 'SF Mono', Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    font-family: var(--font-ui);
     background: var(--bg); color: var(--text);
-    padding: 16px; max-width: 600px; margin: 0 auto;
+    padding: 16px; max-width: 660px; margin: 0 auto;
     -webkit-font-smoothing: antialiased;
+    line-height: 1.45;
   }
-  /* Desktop bump — at >=900px viewport the 600px column leaves the
+  /* Telemetry stays monospace: identifiers, log lines, code wells. Prose
+     (sentences, labels, headlines) rides the UI face set on body. */
+  pre, code, .cr-feed, .rs-table, .rot-slug, .tw-pr-link, .cr-chip,
+  .cr-timeline-slug, .cr-timeline-sha, .cr-timeline-diff, .wh-kimi {
+    font-family: var(--font-mono);
+  }
+  /* Desktop bump — at >=900px viewport the 660px column leaves the
      burn-bar and what's-happening rows feeling cramped while a 1080p
-     monitor has plenty of horizontal real estate. Bumping to 760px gives
+     monitor has plenty of horizontal real estate. Bumping to 860px gives
      the information-dense panels room to breathe without overshooting
      into a layout the mobile-first CSS wasn't designed for. */
   @media (min-width: 900px) {
-    body { max-width: 760px; padding: 24px; }
+    body { max-width: 860px; padding: 24px; }
   }
-  h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-  .subtitle { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
+  h1 { font-size: 24px; font-weight: 650; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 15px; color: var(--text-dim); margin-bottom: 16px; }
   .card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;
   }
-  .card-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .card-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .machine-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .machine-dot.ok { background: var(--green); }
   .machine-dot.warn { background: var(--yellow); }
   .machine-dot.err { background: var(--red); }
   .machine-dot.stale { background: var(--text-dim); }
 
-  .row { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; }
+  .row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
   .row .label { color: var(--text-dim); }
   .row .value { color: var(--text); }
   .row .value.success { color: var(--green); }
@@ -75,16 +99,16 @@
   .row .value.accent { color: var(--accent); }
 
   .tag {
-    display: inline-block; font-size: 10px; padding: 1px 6px;
+    display: inline-block; font-size: 12px; padding: 1px 6px;
     border-radius: 3px; font-weight: 500;
   }
-  .tag.ok { background: rgba(158,206,106,0.15); color: var(--green); }
-  .tag.warn { background: rgba(224,175,104,0.12); color: var(--yellow); }
-  .tag.err { background: rgba(247,118,142,0.12); color: var(--red); }
+  .tag.ok { background: var(--green-bg); color: var(--green); }
+  .tag.warn { background: var(--yellow-bg); color: var(--yellow); }
+  .tag.err { background: var(--red-bg); color: var(--red); }
   .tag.dim { background: var(--surface2); color: var(--text-dim); }
 
   .error-hint {
-    font-size: 10px; color: var(--text-dim); font-style: italic;
+    font-size: 12px; color: var(--text-dim); font-style: italic;
     margin-top: 4px; padding: 4px 8px;
     border-left: 2px solid var(--text-dim);
     word-break: break-word;
@@ -97,7 +121,7 @@
      non-last children instead. Same pattern the rest of this file follows. */
   .burn-bar-wrap {
     display: flex; align-items: center;
-    font-size: 11px; padding: 3px 0;
+    font-size: 13px; padding: 3px 0;
   }
   .burn-bar-wrap > *:not(:last-child) { margin-right: 8px; }
   .burn-bar-wrap .label { color: var(--text-dim); flex-shrink: 0; min-width: 100px; }
@@ -113,7 +137,7 @@
   .burn-bar-fill.yellow { background: var(--yellow); }
   .burn-bar-fill.red { background: var(--red); }
   .burn-pct {
-    font-size: 10px; flex-shrink: 0; min-width: 48px; text-align: right;
+    font-size: 12px; flex-shrink: 0; min-width: 48px; text-align: right;
     font-variant-numeric: tabular-nums;
   }
   .burn-pct.green { color: var(--green); }
@@ -130,12 +154,12 @@
   .machine-collapsed { padding: 0; }
   .machine-collapsed > summary {
     cursor: pointer; -webkit-user-select: none; user-select: none;
-    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
     list-style: none;
     min-height: 44px;
     padding: 12px 16px;
     display: flex; align-items: center;
-    font-size: 12px; font-weight: 600;
+    font-size: 14px; font-weight: 600;
   }
   .machine-collapsed > summary::-webkit-details-marker { display: none; }
   .machine-collapsed > summary::before {
@@ -147,7 +171,7 @@
   .machine-collapsed > summary > .machine-dot { margin-right: 8px; }
   .machine-collapsed > summary > .ms-name { color: var(--text); }
   .machine-collapsed > summary > .ms-tail {
-    margin-left: auto; font-size: 10px; font-weight: 400;
+    margin-left: auto; font-size: 12px; font-weight: 400;
     color: var(--text-dim);
   }
   .machine-collapsed > summary > .ms-tail.warn { color: var(--yellow); }
@@ -157,19 +181,19 @@
     border-top: 1px solid var(--border);
   }
   .machines-header {
-    font-size: 10px; font-weight: 600; color: var(--cyan);
+    font-size: 12px; font-weight: 600; color: var(--cyan);
     letter-spacing: 0.06em; text-transform: uppercase;
     margin: 18px 0 8px;
   }
 
   .diag-drawer {
     margin-top: 8px; padding-top: 8px;
-    border-top: 1px solid rgba(192,202,245,0.08);
+    border-top: 1px solid rgba(28,36,51,0.10);
   }
   .diag-drawer summary {
     cursor: pointer; -webkit-user-select: none; user-select: none;
-    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
-    font-size: 11px; color: var(--accent);
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
+    font-size: 13px; color: var(--accent);
     list-style: none;
     min-height: 44px;
     display: flex; align-items: center;
@@ -181,13 +205,13 @@
   }
   .diag-drawer[open] summary::before { content: '\25BE'; }
   .diag-drawer .field-label {
-    font-size: 10px; color: var(--text-dim);
+    font-size: 12px; color: var(--text-dim);
     margin-top: 6px; margin-bottom: 2px;
   }
   .diag-drawer pre {
     background: var(--bg); border: 1px solid var(--border);
     border-radius: 4px; padding: 8px;
-    font-family: inherit; font-size: 10px; color: var(--text);
+    font-family: inherit; font-size: 12px; color: var(--text);
     white-space: pre-wrap; word-break: break-word;
     max-height: 200px; overflow: auto;
   }
@@ -199,25 +223,25 @@
   .expected-fleet {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .ef-header {
-    font-size: 10px; font-weight: 600; color: var(--cyan);
+    font-size: 12px; font-weight: 600; color: var(--cyan);
     letter-spacing: 0.04em; margin-bottom: 6px;
   }
   .ef-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 3px 0; font-size: 11px;
+    padding: 3px 0; font-size: 13px;
   }
   .ef-row .ef-name { color: var(--text); }
-  .ef-row .ef-detail { color: var(--text-dim); font-size: 10px; }
+  .ef-row .ef-detail { color: var(--text-dim); font-size: 12px; }
   .ef-badge {
-    display: inline-block; font-size: 10px; padding: 1px 6px;
+    display: inline-block; font-size: 12px; padding: 1px 6px;
     border-radius: 3px; font-weight: 500; margin-left: 8px;
   }
-  .ef-badge.active { background: rgba(158,206,106,0.15); color: var(--green); }
-  .ef-badge.stale { background: rgba(224,175,104,0.12); color: var(--yellow); }
-  .ef-badge.missing { background: rgba(247,118,142,0.12); color: var(--red); }
+  .ef-badge.active { background: var(--green-bg); color: var(--green); }
+  .ef-badge.stale { background: var(--yellow-bg); color: var(--yellow); }
+  .ef-badge.missing { background: var(--red-bg); color: var(--red); }
 
   /* Auto-digest panel — recent auto/* commits across the fleet. Sources are
      auto-digest-<machine>.json gist files written each Phase -1.5 dispatch
@@ -225,26 +249,26 @@
   .auto-digest {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .ad-header {
-    font-size: 10px; font-weight: 600; color: var(--cyan);
+    font-size: 12px; font-weight: 600; color: var(--cyan);
     letter-spacing: 0.04em; margin-bottom: 8px;
   }
   .ad-section {
-    font-size: 10px; font-weight: 600; color: var(--text-dim);
+    font-size: 12px; font-weight: 600; color: var(--text-dim);
     text-transform: uppercase; letter-spacing: 0.04em;
     margin-top: 8px; margin-bottom: 4px;
   }
   .ad-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 3px 0; font-size: 11px;
+    padding: 3px 0; font-size: 13px;
   }
   .ad-name { color: var(--text); }
-  .ad-detail { color: var(--text-dim); font-size: 10px; }
+  .ad-detail { color: var(--text-dim); font-size: 12px; }
   .ad-count {
     color: var(--green); font-weight: 600;
-    font-size: 10px; margin-left: 8px;
+    font-size: 12px; margin-left: 8px;
     font-variant-numeric: tabular-nums;
   }
   .ad-count.zero { color: var(--text-dim); font-weight: 400; }
@@ -254,22 +278,25 @@
      telemetry strip, matching the local dashboard.mjs Control Room tab.
      Scoped under #controlRoomPanel; render JS is untouched. ASCII-only. */
   #controlRoomPanel {
-    --cr-steel-2: #0e0f16; --cr-amber: #ffb454; --cr-label: #7e88ac;
+    /* Light remap of the instrument-panel locals: the "recessed well"
+       becomes a pale inset panel, amber phosphor becomes amber INK
+       (#7a5200 = 6.4:1 on --surface), etched labels use the shared dim. */
+    --cr-steel-2: #eef1f7; --cr-amber: #7a5200; --cr-label: var(--text-dim);
   }
   /* COMPOUNDING master lamp on the public mirror: answers "is it landing code?"
      so green/liveness cannot hide a dead compound loop. */
   #controlRoomPanel .cr-compounding {
     display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
     margin: 8px 0 12px; padding: 9px 13px; border-radius: 5px;
-    border: 1px solid #000; border-left-width: 5px; font-size: 11px; color: var(--cr-label);
-    background: linear-gradient(180deg, #15161f, var(--cr-steel-2));
-    box-shadow: inset 1px 1px 0 #3a3f55, inset -1px -1px 0 #05060a, 0 2px 4px rgba(0,0,0,0.4);
+    border: 1px solid var(--border); border-left-width: 5px; font-size: 13px; color: var(--cr-label);
+    background: var(--cr-steel-2);
+    box-shadow: 0 1px 2px rgba(16,24,40,0.06);
   }
   #controlRoomPanel .cr-compounding.compounding { border-left-color: var(--green); }
   #controlRoomPanel .cr-compounding.compounding-manual { border-left-color: var(--amber); }
-  #controlRoomPanel .cr-compounding.stalled { border-left-color: var(--red); box-shadow: 0 0 12px rgba(255,80,80,0.25), inset 1px 1px 0 #3a3f55; }
-  #controlRoomPanel .cr-compounding.idle { border-left-color: #2c3047; }
-  #controlRoomPanel .cr-comp-badge { font-weight: 800; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 1px 0 #000; }
+  #controlRoomPanel .cr-compounding.stalled { border-left-color: var(--red); background: var(--red-bg); }
+  #controlRoomPanel .cr-compounding.idle { border-left-color: var(--border); }
+  #controlRoomPanel .cr-comp-badge { font-weight: 800; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; }
   #controlRoomPanel .cr-compounding.compounding .cr-comp-badge { color: var(--green); }
   #controlRoomPanel .cr-compounding.compounding-manual .cr-comp-badge { color: var(--amber); }
   #controlRoomPanel .cr-compounding.stalled .cr-comp-badge { color: var(--red); }
@@ -278,107 +305,106 @@
   .cr-projects { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
   .cr-chip {
     display: flex; align-items: center; gap: 7px;
-    background: linear-gradient(180deg, #15161f, #0e0f16);
-    border: 1px solid #000; border-radius: 5px;
-    padding: 4px 10px; font-size: 10px; letter-spacing: 0.5px;
-    box-shadow: inset 1px 1px 0 #3a3f55, inset -1px -1px 0 #05060a, 0 2px 4px rgba(0,0,0,0.4);
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 4px 10px; font-size: 12px; letter-spacing: 0.5px;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.06);
   }
-  /* chunky backlit indicator lamp */
+  /* indicator lamp — solid ink dot with a soft tint halo (daylight version
+     of the backlit lamp; the halo carries the "lit" reading) */
   .cr-chip-dot {
     width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
-    background: radial-gradient(circle at 35% 30%, #3a3f55, #1a1d2c 70%);
-    box-shadow: inset 0 0 0 1px #000, inset 1px 1px 1px rgba(255,255,255,0.12), 0 1px 1px rgba(0,0,0,0.6);
+    background: #cfd6e2;
+    box-shadow: inset 0 0 0 1px rgba(28,36,51,0.18);
   }
   .cr-chip-dot.healthy {
-    background: radial-gradient(circle at 35% 30%, #e6ffce, var(--green) 60%, #4a6b30 100%);
-    box-shadow: inset 0 0 0 1px #0a1505, 0 0 7px rgba(158,206,106,0.8), 0 0 2px rgba(158,206,106,1);
+    background: var(--green);
+    box-shadow: 0 0 0 3px var(--green-bg);
   }
   .cr-chip-dot.degraded {
-    background: radial-gradient(circle at 35% 30%, #ffe9c2, var(--yellow) 60%, #8a6a2e 100%);
-    box-shadow: inset 0 0 0 1px #1a1304, 0 0 7px rgba(224,175,104,0.8), 0 0 2px rgba(224,175,104,1);
+    background: var(--yellow);
+    box-shadow: 0 0 0 3px var(--yellow-bg);
   }
   .cr-chip-dot.down {
-    background: radial-gradient(circle at 35% 30%, #ffd2db, var(--red) 60%, #8a2f3d 100%);
-    box-shadow: inset 0 0 0 1px #1a0509, 0 0 8px rgba(247,118,142,0.85), 0 0 3px rgba(247,118,142,1);
+    background: var(--red);
+    box-shadow: 0 0 0 3px var(--red-bg);
     animation: cr-alarm 1.4s ease-in-out infinite;
   }
   .cr-chip-dot.idle {
-    background: radial-gradient(circle at 35% 30%, #3a3f55, #14161f 72%);
-    box-shadow: inset 0 0 0 1px #000, inset 1px 1px 1px rgba(255,255,255,0.1);
+    background: #cfd6e2;
+    box-shadow: inset 0 0 0 1px rgba(28,36,51,0.18);
   }
   @keyframes cr-alarm { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.5); } }
   @media (prefers-reduced-motion: reduce) { .cr-chip-dot.down { animation: none; } }
-  .cr-chip-state { color: var(--cr-label); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; }
+  .cr-chip-state { color: var(--cr-label); text-transform: uppercase; letter-spacing: 1px; font-size: 11px; }
   /* relay STAGE on the chip -- green phosphor (SYSTEM-MAP s2 baton) */
   .cr-chip-stage {
-    color: #7fffa6; text-shadow: 0 0 4px rgba(127,255,166,0.5);
-    font-weight: 700; letter-spacing: 0.5px; font-size: 9px;
-    padding: 1px 6px; border-radius: 3px; background: rgba(0,0,0,0.35);
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+    color: var(--green);
+    font-weight: 700; letter-spacing: 0.5px; font-size: 11px;
+    padding: 1px 6px; border-radius: 3px; background: var(--green-bg);
   }
   /* annunciator / telemetry strip */
   .cr-feed {
-    max-height: 380px; overflow-y: auto;
     background: var(--cr-steel-2); border-radius: 4px; padding: 4px 12px;
-    box-shadow: inset 0 1px 4px rgba(0,0,0,0.6);
+    box-shadow: inset 0 1px 3px rgba(16,24,40,0.08);
   }
   .cr-feed-row {
     display: flex; gap: 10px; padding: 5px 0; align-items: baseline;
-    border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 11px;
+    border-bottom: 1px solid rgba(28,36,51,0.07); font-size: 13px;
   }
   .cr-feed-row:last-child { border-bottom: none; }
-  .cr-feed-time { color: var(--cr-label); font-size: 10px; flex-shrink: 0; min-width: 58px; }
-  .cr-feed-machine { color: var(--cyan); font-size: 10px; flex-shrink: 0; min-width: 64px; }
-  .cr-feed-line { color: #aeb6d6; word-break: break-word; }
-  .cr-feed-row.ok .cr-feed-line { color: var(--green); text-shadow: 0 0 4px rgba(158,206,106,0.4); }
-  .cr-feed-row.bad .cr-feed-line { color: var(--red); text-shadow: 0 0 4px rgba(247,118,142,0.45); }
-  .cr-feed-row.warn .cr-feed-line { color: var(--yellow); text-shadow: 0 0 4px rgba(224,175,104,0.4); }
+  .cr-feed-time { color: var(--cr-label); font-size: 12px; flex-shrink: 0; min-width: 58px; }
+  .cr-feed-machine { color: var(--cyan); font-size: 12px; flex-shrink: 0; min-width: 64px; }
+  .cr-feed-line { color: var(--text); word-break: break-word; }
+  .cr-feed-row.ok .cr-feed-line { color: var(--green); }
+  .cr-feed-row.bad .cr-feed-line { color: var(--red); }
+  .cr-feed-row.warn .cr-feed-line { color: var(--yellow); }
   /* Construction timeline + flagship spotlight (ASCII-only labels) */
-  #controlRoomPanel .cr-subhead { color: var(--cr-amber); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 14px 0 6px; }
-  #controlRoomPanel .cr-spotlight { border: 1px solid rgba(224,175,104,0.45); border-radius: 5px; padding: 8px 10px; margin-bottom: 10px; box-shadow: 0 0 14px rgba(224,175,104,0.12); }
-  #controlRoomPanel .cr-spotlight-title { color: var(--cr-amber); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
-  #controlRoomPanel .cr-spotlight-count { font-size: 10px; font-weight: 600; color: var(--green); letter-spacing: 0.5px; margin-left: 6px; }
-  #controlRoomPanel .cr-thumb { display: block; width: 100%; max-width: 360px; height: auto; border: 1px solid rgba(224,175,104,0.35); border-radius: 4px; margin: 0 0 8px; }
+  #controlRoomPanel .cr-subhead { color: var(--cr-amber); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin: 14px 0 6px; }
+  #controlRoomPanel .cr-spotlight { border: 1px solid rgba(122,82,0,0.35); border-radius: 5px; padding: 8px 10px; margin-bottom: 10px; background: var(--surface); }
+  #controlRoomPanel .cr-spotlight-title { color: var(--cr-amber); font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  #controlRoomPanel .cr-spotlight-count { font-size: 12px; font-weight: 600; color: var(--green); letter-spacing: 0.5px; margin-left: 6px; }
+  #controlRoomPanel .cr-thumb { display: block; width: 100%; max-width: 360px; height: auto; border: 1px solid rgba(122,82,0,0.3); border-radius: 4px; margin: 0 0 8px; }
   #controlRoomPanel .cr-roadmap { margin: 0 0 8px; }
-  #controlRoomPanel .cr-roadmap-label { color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-bottom: 3px; }
-  #controlRoomPanel .cr-roadmap-bar { height: 8px; background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden; }
-  #controlRoomPanel .cr-roadmap-fill { height: 100%; background: var(--green); box-shadow: 0 0 8px rgba(158,206,106,0.5); }
-  #controlRoomPanel .cr-timeline-slug { display: inline-block; min-width: 64px; color: var(--cr-label); font-size: 10px; letter-spacing: 0.5px; margin-right: 6px; }
-  #controlRoomPanel .cr-timeline-task { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7fffa6; border: 1px solid rgba(127,255,166,0.4); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
+  #controlRoomPanel .cr-roadmap-label { color: var(--cr-label); font-size: 12px; letter-spacing: 0.5px; margin-bottom: 3px; }
+  #controlRoomPanel .cr-roadmap-bar { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  #controlRoomPanel .cr-roadmap-fill { height: 100%; background: var(--green); }
+  #controlRoomPanel .cr-timeline-slug { display: inline-block; min-width: 64px; color: var(--cr-label); font-size: 12px; letter-spacing: 0.5px; margin-right: 6px; }
+  #controlRoomPanel .cr-timeline-task { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--green); border: 1px solid rgba(26,127,55,0.4); border-radius: 3px; padding: 0 4px; margin-right: 6px; background: var(--green-bg); }
   #controlRoomPanel .cr-timeline-task.task-feat,
   #controlRoomPanel .cr-timeline-task.task-feature,
-  #controlRoomPanel .cr-timeline-task.task-scaffold-app { color: #7fffa6; border-color: rgba(127,255,166,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-scaffold-app { color: var(--green); border-color: rgba(26,127,55,0.4); background: var(--green-bg); }
   #controlRoomPanel .cr-timeline-task.task-fix,
-  #controlRoomPanel .cr-timeline-task.task-fix-attempt { color: #ff7a7a; border-color: rgba(255,122,122,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-fix-attempt { color: var(--red); border-color: rgba(179,38,30,0.4); background: var(--red-bg); }
   #controlRoomPanel .cr-timeline-task.task-docs,
   #controlRoomPanel .cr-timeline-task.task-docs-gen,
-  #controlRoomPanel .cr-timeline-task.task-audit { color: #ffd88a; border-color: rgba(255,216,138,0.45); }
-  #controlRoomPanel .cr-timeline-task.task-test { color: #7ad1ff; border-color: rgba(122,209,255,0.45); }
+  #controlRoomPanel .cr-timeline-task.task-audit { color: var(--yellow); border-color: rgba(154,103,0,0.4); background: var(--yellow-bg); }
+  #controlRoomPanel .cr-timeline-task.task-test { color: var(--cyan); border-color: rgba(14,116,144,0.4); background: #e3f3f7; }
   #controlRoomPanel .cr-timeline-task.task-chore,
   #controlRoomPanel .cr-timeline-task.task-refactor,
-  #controlRoomPanel .cr-timeline-task.task-wip { color: #b8c0e0; border-color: rgba(184,192,224,0.45); }
-  #controlRoomPanel .cr-timeline-sha { color: var(--cr-label); font-size: 10px; margin-left: 6px; opacity: 0.8; }
+  #controlRoomPanel .cr-timeline-task.task-wip { color: var(--text-dim); border-color: rgba(85,97,121,0.4); background: var(--surface2); }
+  #controlRoomPanel .cr-timeline-sha { color: var(--cr-label); font-size: 12px; margin-left: 6px; opacity: 0.8; }
   #controlRoomPanel .cr-filter { display: flex; gap: 6px; margin: 8px 0 6px; }
   #controlRoomPanel .cr-filter button {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
-    color: var(--cr-label); background: var(--cr-steel-2); border: 1px solid #2a2e42;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--cr-label); background: var(--cr-steel-2); border: 1px solid var(--border);
     border-radius: 3px; padding: 3px 10px; cursor: pointer;
   }
-  #controlRoomPanel .cr-filter button:hover { color: var(--cr-amber); border-color: rgba(255,180,84,0.45); }
-  #controlRoomPanel .cr-filter button.active { color: #0e0f16; background: var(--cr-amber); border-color: var(--cr-amber); }
-  #controlRoomPanel a.cr-timeline-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.25); }
+  #controlRoomPanel .cr-filter button:hover { color: var(--cr-amber); border-color: rgba(122,82,0,0.45); }
+  #controlRoomPanel .cr-filter button.active { color: #ffffff; background: var(--cr-amber); border-color: var(--cr-amber); }
+  #controlRoomPanel a.cr-timeline-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(28,36,51,0.3); }
   #controlRoomPanel a.cr-timeline-link:hover { border-bottom-color: var(--green); }
-  #controlRoomPanel .cr-trust-row { display: flex; gap: 10px; padding: 5px 0; align-items: baseline; font-size: 11px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  #controlRoomPanel .cr-trust-row { display: flex; gap: 10px; padding: 5px 0; align-items: baseline; font-size: 13px; border-bottom: 1px solid rgba(28,36,51,0.07); }
   #controlRoomPanel .cr-trust-row:last-child { border-bottom: none; }
-  #controlRoomPanel .cr-revert-kind { font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border-radius: 3px; padding: 0 4px; margin-right: 6px; border: 1px solid; }
-  #controlRoomPanel .cr-revert-kind.auto { color: #7fffa6; border-color: rgba(127,255,166,0.4); }
-  #controlRoomPanel .cr-revert-kind.manual { color: var(--cr-amber); border-color: rgba(255,180,84,0.45); }
-  #controlRoomPanel .cr-quality-trend { font-size: 10px; font-weight: 700; margin: 0 6px; }
+  #controlRoomPanel .cr-revert-kind { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border-radius: 3px; padding: 0 4px; margin-right: 6px; border: 1px solid; }
+  #controlRoomPanel .cr-revert-kind.auto { color: var(--green); border-color: rgba(26,127,55,0.4); }
+  #controlRoomPanel .cr-revert-kind.manual { color: var(--cr-amber); border-color: rgba(122,82,0,0.45); }
+  #controlRoomPanel .cr-quality-trend { font-size: 12px; font-weight: 700; margin: 0 6px; }
   #controlRoomPanel .cr-quality-trend.up { color: var(--red); }
   #controlRoomPanel .cr-quality-trend.down { color: var(--green); }
   #controlRoomPanel .cr-quality-trend.flat { color: var(--cr-label); }
-  #controlRoomPanel .cr-quality-flag { font-size: 8px; font-weight: 700; text-transform: uppercase; color: var(--red); border: 1px solid rgba(247,118,142,0.5); border-radius: 3px; padding: 0 4px; margin-left: 6px; }
-  #controlRoomPanel .cr-timeline-diff { font-family: monospace; font-size: 10px; margin-left: 6px; color: var(--cr-label); opacity: 0.85; }
+  #controlRoomPanel .cr-quality-flag { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--red); border: 1px solid rgba(179,38,30,0.5); border-radius: 3px; padding: 0 4px; margin-left: 6px; }
+  #controlRoomPanel .cr-timeline-diff { font-family: monospace; font-size: 12px; margin-left: 6px; color: var(--cr-label); opacity: 0.85; }
 
   /* === Step 2 redesign panels === */
 
@@ -447,15 +473,15 @@
   .banner-v2 {
     display: flex; align-items: center;
     padding: 14px 16px; border-radius: 8px; margin-bottom: 14px;
-    font-size: 13px; line-height: 1.4;
+    font-size: 15px; line-height: 1.4;
   }
   .banner-v2 > *:not(:last-child) { margin-right: 12px; }
-  .banner-v2.ok    { background: rgba(158,206,106,0.10); border: 1px solid var(--green);  color: var(--green); }
-  .banner-v2.warn  { background: rgba(224,175,104,0.08); border: 1px solid var(--yellow); color: var(--yellow); }
-  .banner-v2.err   { background: rgba(247,118,142,0.10); border: 1px solid var(--red);    color: var(--red); }
+  .banner-v2.ok    { background: var(--green-bg); border: 1px solid var(--green);  color: var(--green); }
+  .banner-v2.warn  { background: var(--yellow-bg); border: 1px solid var(--yellow); color: var(--yellow); }
+  .banner-v2.err   { background: var(--red-bg); border: 1px solid var(--red);    color: var(--red); }
   .banner-v2 .banner-text { flex: 1; min-width: 0; font-weight: 600; word-break: break-word; }
   .banner-v2 .banner-detail {
-    font-size: 11px; font-weight: 400; color: var(--text-dim);
+    font-size: 13px; font-weight: 400; color: var(--text-dim);
     margin-top: 4px; word-break: break-word;
   }
 
@@ -466,10 +492,10 @@
   .top-section {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .ts-header {
-    font-size: 10px; font-weight: 600; color: var(--cyan);
+    font-size: 12px; font-weight: 600; color: var(--cyan);
     letter-spacing: 0.06em; text-transform: uppercase;
     margin-bottom: 8px;
   }
@@ -477,8 +503,8 @@
   /* What's happening — one row per machine. */
   .wh-row {
     display: flex; align-items: flex-start; flex-wrap: wrap;
-    padding: 5px 0; font-size: 11px;
-    border-top: 1px solid rgba(192,202,245,0.05);
+    padding: 5px 0; font-size: 13px;
+    border-top: 1px solid rgba(28,36,51,0.08);
   }
   .wh-row:first-of-type { border-top: none; }
   .wh-row > .wh-name, .wh-row > .wh-icon, .wh-row > .wh-sentence { margin-right: 10px; }
@@ -507,7 +533,7 @@
   /* Today's work — 3-row mini-table. */
   .tw-row {
     display: flex; align-items: center;
-    padding: 4px 0; font-size: 11px;
+    padding: 4px 0; font-size: 13px;
   }
   .tw-row > *:not(:last-child) { margin-right: 10px; }
   .tw-row .tw-label { color: var(--text-dim); min-width: 130px; flex-shrink: 0; }
@@ -525,7 +551,7 @@
   .tw-bar-fill.yellow { background: var(--yellow); }
   .tw-bar-fill.red { background: var(--red); }
   .tw-pr-link {
-    display: inline-block; font-size: 10px; padding: 1px 6px;
+    display: inline-block; font-size: 12px; padding: 1px 6px;
     border-radius: 3px; background: var(--surface2); color: var(--accent);
     margin-right: 4px; margin-bottom: 2px; text-decoration: none;
     font-family: inherit;
@@ -533,41 +559,41 @@
 
   /* Rotation panel. */
   .rot-seq {
-    font-size: 11px; color: var(--text); margin-bottom: 4px;
+    font-size: 13px; color: var(--text); margin-bottom: 4px;
     line-height: 1.5; word-break: break-word;
   }
   .rot-seq .rot-slug {
     display: inline-block; padding: 1px 5px; border-radius: 3px;
     background: var(--surface2); margin-right: 4px; margin-bottom: 3px;
-    font-size: 10px; color: var(--text);
+    font-size: 12px; color: var(--text);
   }
-  .rot-seq .rot-slug.dominant { background: rgba(247,118,142,0.15); color: var(--red); }
+  .rot-seq .rot-slug.dominant { background: var(--red-bg); color: var(--red); }
   .rot-verdict {
-    font-size: 11px; font-weight: 600; margin-top: 4px;
+    font-size: 13px; font-weight: 600; margin-top: 4px;
   }
   .rot-verdict.ok    { color: var(--green); }
   .rot-verdict.stuck { color: var(--red); }
 
   /* Attention panel. */
   .att-row {
-    padding: 6px 0; border-top: 1px solid rgba(192,202,245,0.05);
+    padding: 6px 0; border-top: 1px solid rgba(28,36,51,0.08);
   }
   .att-row:first-of-type { border-top: none; }
   .att-headline {
-    font-size: 11px; font-weight: 600; line-height: 1.3;
+    font-size: 13px; font-weight: 600; line-height: 1.3;
     word-break: break-word;
   }
   .att-headline.warn { color: var(--yellow); }
   .att-headline.err  { color: var(--red); }
   .att-detail {
-    font-size: 10px; color: var(--text-dim); font-style: italic;
+    font-size: 12px; color: var(--text-dim); font-style: italic;
     margin-top: 2px; line-height: 1.3; word-break: break-word;
   }
 
   /* Recent substitutions panel. */
-  .rs-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .rs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .rs-table th, .rs-table td {
-    text-align: left; padding: 4px 6px; border-top: 1px solid rgba(192,202,245,0.05);
+    text-align: left; padding: 4px 6px; border-top: 1px solid rgba(28,36,51,0.08);
     color: var(--text-dim); word-break: break-word;
   }
   .rs-table th { color: var(--text); font-weight: 600; border-top: none; }
@@ -575,14 +601,14 @@
 
   .pending-merges { margin-bottom: 14px; }
   .pm-header {
-    font-size: 11px; font-weight: 600; color: var(--cyan);
+    font-size: 13px; font-weight: 600; color: var(--cyan);
     margin-bottom: 8px; letter-spacing: 0.04em;
   }
   .pm-entry {
     background: var(--surface); border: 1px solid var(--border);
     border-left-width: 3px;
     border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .pm-entry.inflight { border-left-color: var(--cyan); }
   .pm-entry.clean { border-left-color: var(--green); }
@@ -592,24 +618,24 @@
     word-break: break-word; overflow-wrap: anywhere;
   }
   .pm-line {
-    font-size: 10px; color: var(--text-dim); padding: 2px 0;
+    font-size: 12px; color: var(--text-dim); padding: 2px 0;
   }
   .pm-line.green { color: var(--green); font-weight: 600; }
   .pm-line.red { color: var(--red); font-weight: 600; }
   .pm-suspend-callout {
     margin-top: 6px; padding: 6px 8px;
-    background: rgba(247,118,142,0.06);
+    background: var(--red-bg);
     border-radius: 4px; color: var(--red); font-weight: 600;
-    font-size: 10px;
+    font-size: 12px;
   }
   .pm-entry details { margin-top: 6px; }
   .pm-entry summary {
     cursor: pointer; -webkit-user-select: none; user-select: none;
-    font-size: 10px; color: var(--accent);
+    font-size: 12px; color: var(--accent);
     list-style: none;
     min-height: 44px;
     display: flex; align-items: center;
-    -webkit-tap-highlight-color: rgba(122,162,247,0.1);
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
   }
   .pm-entry summary::-webkit-details-marker { display: none; }
   .pm-entry summary::before {
@@ -618,24 +644,24 @@
   }
   .pm-entry details[open] summary::before { content: '\25BE'; }
   .pm-tail-label {
-    font-size: 10px; color: var(--text-dim);
+    font-size: 12px; color: var(--text-dim);
     margin-top: 6px; margin-bottom: 2px;
   }
   .pm-entry pre {
     background: var(--bg); border: 1px solid var(--border);
     border-radius: 4px; padding: 6px;
-    font-family: inherit; font-size: 10px; color: var(--text);
+    font-family: inherit; font-size: 12px; color: var(--text);
     white-space: pre-wrap; word-break: break-word;
     max-height: 150px; overflow: auto;
   }
 
   .refresh-bar {
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 10px; color: var(--text-dim); margin-bottom: 14px;
+    font-size: 12px; color: var(--text-dim); margin-bottom: 14px;
   }
   .refresh-btn {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 4px; color: var(--accent); font-size: 10px;
+    border-radius: 4px; color: var(--accent); font-size: 12px;
     padding: 4px 10px; cursor: pointer; font-family: inherit;
   }
   .refresh-btn:active { background: var(--surface2); }
@@ -655,20 +681,20 @@
 
   .install-btn {
     background: var(--accent); border: none; border-radius: 6px;
-    color: var(--bg); font-size: 11px; font-weight: 600;
+    color: #ffffff; font-size: 13px; font-weight: 600;
     padding: 6px 14px; cursor: pointer; font-family: inherit;
     display: none;
   }
   .install-btn:active { opacity: 0.8; }
 
   .error-box {
-    background: rgba(247,118,142,0.08); border: 1px solid var(--red);
-    border-radius: 6px; padding: 12px; font-size: 11px; color: var(--red);
+    background: var(--red-bg); border: 1px solid var(--red);
+    border-radius: 6px; padding: 12px; font-size: 13px; color: var(--red);
     margin-bottom: 14px; display: none;
     word-break: break-word;
   }
-  .error-box small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 10px; }
-  .footer { font-size: 10px; color: var(--text-dim); text-align: center; margin-top: 20px; }
+  .error-box small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 12px; }
+  .footer { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 20px; }
   .footer a { color: var(--accent); text-decoration: none; }
 
   /* === Model tier ladder === */
@@ -678,25 +704,25 @@
   #modelTierPanel .mt-rung {
     display: flex; align-items: center; gap: 6px;
     background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 5px; padding: 5px 10px; font-size: 10px;
+    border-radius: 5px; padding: 5px 10px; font-size: 12px;
   }
   #modelTierPanel .mt-rung.active {
-    border-color: var(--accent); background: rgba(122,162,247,0.12);
+    border-color: var(--accent); background: var(--accent-bg);
   }
   #modelTierPanel .mt-rung.dormant { opacity: 0.45; }
   #modelTierPanel .mt-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   }
   #modelTierPanel .mt-dot.t0 { background: var(--cyan); }
-  #modelTierPanel .mt-dot.t1 { background: #7fffa6; }
+  #modelTierPanel .mt-dot.t1 { background: #1a7f37; }
   #modelTierPanel .mt-dot.t2 { background: var(--yellow); }
-  #modelTierPanel .mt-dot.t3 { background: #ff9e64; }
+  #modelTierPanel .mt-dot.t3 { background: #b54708; }
   #modelTierPanel .mt-dot.t4 { background: var(--red); }
   #modelTierPanel .mt-name { font-weight: 600; color: var(--text); }
   #modelTierPanel .mt-cost { color: var(--text-dim); margin-left: 4px; }
   #modelTierPanel .mt-current {
     margin-top: 10px; padding: 10px; background: var(--surface2);
-    border-radius: 6px; border: 1px solid var(--border); font-size: 11px;
+    border-radius: 6px; border: 1px solid var(--border); font-size: 13px;
   }
   #modelTierPanel .mt-current-label { color: var(--text-dim); margin-bottom: 4px; }
   #modelTierPanel .mt-current-row { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -709,7 +735,7 @@
   #errorContextPanel .ec-card {
     background: var(--surface2); border: 1px solid var(--border);
     border-left: 3px solid var(--red); border-radius: 6px;
-    padding: 12px; margin-bottom: 10px; font-size: 11px;
+    padding: 12px; margin-bottom: 10px; font-size: 13px;
   }
   #errorContextPanel .ec-card.warn { border-left-color: var(--yellow); }
   #errorContextPanel .ec-head {
@@ -717,26 +743,184 @@
     margin-bottom: 8px;
   }
   #errorContextPanel .ec-title { font-weight: 600; color: var(--text); }
-  #errorContextPanel .ec-meta { color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+  #errorContextPanel .ec-meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
   #errorContextPanel .ec-copy {
-    background: var(--accent); color: var(--bg); border: none; border-radius: 4px;
-    padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #ffffff; border: none; border-radius: 4px;
+    padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
     font-family: inherit; flex-shrink: 0;
   }
   #errorContextPanel .ec-copy:active { opacity: 0.8; }
   #errorContextPanel .ec-action {
     color: var(--yellow); margin-bottom: 8px; padding: 6px 8px;
-    background: rgba(224,175,104,0.08); border-radius: 4px;
+    background: var(--yellow-bg); border-radius: 4px;
   }
   #errorContextPanel .ec-pre {
     background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
-    padding: 8px; font-family: inherit; font-size: 10px; color: var(--text);
+    padding: 8px; font-family: inherit; font-size: 12px; color: var(--text);
     white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
     margin: 0;
   }
   #errorContextPanel .ec-toggle {
-    color: var(--accent); font-size: 10px; cursor: pointer; margin-top: 6px;
+    color: var(--accent); font-size: 12px; cursor: pointer; margin-top: 6px;
     display: inline-block;
+  }
+
+  /* === B2/B3 section rework === */
+
+  /* Stat tiles ( Today's work ). */
+  .stat-tiles {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .stat-tile {
+    background: var(--surface2); border-radius: 6px;
+    padding: 10px 12px; flex: 1; min-width: 120px;
+  }
+  .stat-num {
+    font-size: 24px; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  .stat-label {
+    font-size: 12px; color: var(--text-dim); margin-top: 2px;
+  }
+  .stat-sublabel {
+    font-size: 11px; color: var(--text-dim); margin-top: 2px;
+  }
+
+  /* Grouped shipped-PR table. */
+  .ship-table {
+    width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px;
+  }
+  .ship-table th, .ship-table td {
+    text-align: left; padding: 5px 6px;
+    border-top: 1px solid rgba(28,36,51,0.08);
+    color: var(--text); vertical-align: baseline;
+  }
+  .ship-table th { color: var(--text-dim); font-weight: 600; border-top: none; font-size: 12px; }
+  .ship-table tbody tr:first-child td { border-top: none; }
+  .ship-table a { color: var(--accent); text-decoration: none; }
+  .ship-table a:hover { text-decoration: underline; }
+  .ship-summary-row {
+    display: flex; align-items: baseline; gap: 0; width: 100%;
+  }
+  .ship-summary-row > span {
+    padding: 0 6px; box-sizing: border-box;
+  }
+  .ship-summary-row > .ship-col-proj { width: 20%; flex-shrink: 0; color: var(--text); }
+  .ship-summary-row > .ship-col-task { width: 14%; flex-shrink: 0; }
+  .ship-summary-row > .ship-col-desc { width: 36%; flex-shrink: 0; word-break: break-word; }
+  .ship-summary-row > .ship-col-age { width: 14%; flex-shrink: 0; text-align: right; color: var(--text-dim); font-size: 12px; }
+  .ship-summary-row > .ship-col-chip { width: 16%; flex-shrink: 0; text-align: right; }
+  .ship-group { }
+  .ship-group > summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    list-style: none;
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
+  }
+  .ship-group > summary::-webkit-details-marker { display: none; }
+  .ship-group > summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 4px; display: inline-block;
+  }
+  .ship-group[open] > summary::before { content: '\25BE'; }
+  .ship-group-body {
+    padding: 6px 6px 6px 34%;
+    font-size: 12px; color: var(--text-dim);
+  }
+  .ship-group-body > div { padding: 2px 0; }
+  .ship-count {
+    display: inline-block; font-size: 12px; padding: 1px 5px;
+    border-radius: 3px; font-weight: 500;
+    background: var(--surface2); color: var(--text-dim);
+    margin-left: 6px;
+  }
+  .task-badge {
+    display: inline-block; font-size: 12px; padding: 1px 6px;
+    border-radius: 3px; font-weight: 500;
+    background: var(--surface2); color: var(--text-dim);
+  }
+  .ship-more { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+
+  /* Pending merges table. */
+  .pm-details { margin-bottom: 14px; }
+  .pm-summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    list-style: none;
+    min-height: 44px;
+    display: flex; align-items: center;
+    font-size: 13px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 0.04em;
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
+  }
+  .pm-summary::-webkit-details-marker { display: none; }
+  .pm-summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 8px; display: inline-block; flex-shrink: 0;
+  }
+  .pm-details[open] > .pm-summary::before { content: '\25BE'; }
+  .pm-table-wrap { padding-top: 8px; }
+  .pm-more { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+  .pm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pm-table th, .pm-table td {
+    text-align: left; padding: 5px 6px;
+    border-top: 1px solid rgba(28,36,51,0.08);
+    color: var(--text); vertical-align: baseline;
+  }
+  .pm-table th { color: var(--text-dim); font-weight: 600; border-top: none; font-size: 12px; }
+  .pm-table tbody tr:first-child td { border-top: none; }
+  .pm-table a { color: var(--accent); text-decoration: none; }
+  .pm-table a:hover { text-decoration: underline; }
+  .pm-chip {
+    display: inline-block; font-size: 12px; padding: 1px 6px;
+    border-radius: 3px; font-weight: 500;
+  }
+  .pm-chip.inflight { background: var(--surface2); color: var(--cyan); }
+  .pm-chip.clean { background: var(--green-bg); color: var(--green); }
+  .pm-chip.suspended { background: var(--red-bg); color: var(--red); }
+  .pm-callout-row td {
+    color: var(--red); background: var(--red-bg);
+    border-radius: 4px; padding: 6px 8px; font-size: 12px; font-weight: 600;
+  }
+
+  /* Collapsible detail panels. */
+  .panel-summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    list-style: none;
+    min-height: 44px;
+    display: flex; align-items: center;
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
+  }
+  .panel-summary::-webkit-details-marker { display: none; }
+  .panel-summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 8px; display: inline-block; flex-shrink: 0;
+  }
+  .panel-details[open] > .panel-summary::before { content: '\25BE'; }
+  .panel-summary.ad-header { margin-bottom: 0; }
+  .panel-summary.ts-header { margin-bottom: 0; }
+  .panel-body { padding-top: 8px; }
+
+  /* Annunciator feed show-all expander. */
+  .cr-feed-more { margin-top: 4px; }
+  .cr-feed-more > summary {
+    cursor: pointer; -webkit-user-select: none; user-select: none;
+    list-style: none;
+    min-height: 44px;
+    display: flex; align-items: center;
+    color: var(--accent); font-size: 13px;
+    -webkit-tap-highlight-color: rgba(29,78,216,0.12);
+  }
+  .cr-feed-more > summary::-webkit-details-marker { display: none; }
+  .cr-feed-more > summary::before {
+    content: '\25B8'; color: var(--accent);
+    margin-right: 6px; display: inline-block;
+  }
+  .cr-feed-more[open] > summary::before { content: '\25BE'; }
+  .cr-feed-count {
+    display: inline-block; font-size: 11px; padding: 0 4px;
+    border-radius: 3px; font-weight: 600;
+    background: var(--surface2); color: var(--text-dim);
+    margin-left: 4px;
   }
 </style>
 </head>
@@ -952,6 +1136,16 @@ function errorHint(reason, detail) {
   return null;
 }
 
+// MIRRORS scripts/lib/control-room.mjs displayPrTitle (this file is
+// self-contained and cannot import server modules) - keep in sync.
+function displayPrTitle(title) {
+  const raw = typeof title === 'string' ? title.trim() : '';
+  if (!raw) return { task: null, text: '' };
+  const m = raw.match(/^\[dispatcher\]\s+([a-z-]+):\s*(.*)$/i);
+  if (!m || !m[2]) return { task: null, text: raw };
+  return { task: m[1].toLowerCase(), text: m[2] };
+}
+
 // reasonToSentence — translate a dispatcher skip-reason code into operator
 // copy. Codes are emitted by scripts/lib/gates.mjs and scripts/dispatch.mjs;
 // this is the single mapping table that turns them into plain English on
@@ -961,6 +1155,12 @@ function errorHint(reason, detail) {
 function reasonToSentence(reason, _fleet) {
   if (!present(reason)) return null;
   switch (reason) {
+    case 'quota_exhausted':
+      return 'Free-model quota exhausted - waiting for the window to reset.';
+    case 'canary-failed':
+      return 'Pre-flight canary probe failed - dispatch held.';
+    case 'selector-fallback':
+      return 'Primary pick failed; ran the fallback selector.';
     case 'selector-failed':
       return "Couldn't pick a task. Selector returned nothing.";
     case 'all-projects-saturated':
@@ -984,7 +1184,11 @@ function reasonToSentence(reason, _fleet) {
     case 'insufficient-history-span':
       return 'Not enough commit history to estimate burn yet.';
     default:
-      return null;
+      if (String(reason).toLowerCase().startsWith('circuit-broken')) {
+        return 'Circuit breaker open after repeated errors - cooling down.';
+      }
+      const humanized = String(reason).replace(/[_-]+/g, ' ');
+      return `Last cycle: ${humanized}.`;
   }
 }
 
@@ -1480,7 +1684,6 @@ function renderAutoDigest(gist) {
     container.style.display = 'none';
     return;
   }
-  container.style.display = '';
 
   // Aggregate per-machine + per-project, mirroring aggregateFleetAutoDigest.
   const byMachine = [];
@@ -1518,18 +1721,22 @@ function renderAutoDigest(gist) {
     (a, b) => b.commits - a.commits || a.slug.localeCompare(b.slug)
   );
 
-  const header = document.createElement('div');
-  header.className = 'ad-header';
-  header.textContent =
-    `AUTO-DIGEST — ${totalCommits} commits / ${projectSlugs.size} projects across ` +
-    `${snaps.length} ${snaps.length === 1 ? 'machine' : 'machines'} (last 24h)`;
-  container.appendChild(header);
+  const details = document.createElement('details');
+  details.className = 'panel-details';
+
+  const summary = document.createElement('summary');
+  summary.className = 'panel-summary ad-header';
+  summary.textContent = `Auto-digest - ${totalCommits} commits / ${projectSlugs.size} projects (24h)`;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   // Per-machine rows
   const machineSection = document.createElement('div');
   machineSection.className = 'ad-section';
   machineSection.textContent = 'By machine';
-  container.appendChild(machineSection);
+  body.appendChild(machineSection);
 
   for (const m of byMachine) {
     const row = document.createElement('div');
@@ -1561,7 +1768,7 @@ function renderAutoDigest(gist) {
 
     row.appendChild(left);
     row.appendChild(right);
-    container.appendChild(row);
+    body.appendChild(row);
   }
 
   // Per-project rollup (only projects with commits)
@@ -1569,7 +1776,7 @@ function renderAutoDigest(gist) {
     const projSection = document.createElement('div');
     projSection.className = 'ad-section';
     projSection.textContent = 'By project';
-    container.appendChild(projSection);
+    body.appendChild(projSection);
 
     for (const p of byProject) {
       const row = document.createElement('div');
@@ -1594,9 +1801,13 @@ function renderAutoDigest(gist) {
 
       row.appendChild(left);
       row.appendChild(right);
-      container.appendChild(row);
+      body.appendChild(row);
     }
   }
+
+  details.appendChild(body);
+  container.appendChild(details);
+  container.style.display = '';
 }
 
 // === Control Room trust-signal sub-panels ===
@@ -1774,6 +1985,46 @@ function renderCRMergeStats(withCR, container) {
   }
 }
 
+// Build a grouped, capped annunciator feed. Consecutive rows with the same
+// (machine, line-text) collapse into one row with an xN suffix. At most 15
+// grouped rows are shown; any remainder hide behind a <details> summary.
+function buildGroupedFeed(container, items, makeRow) {
+  if (!items || items.length === 0) return;
+  const groups = [];
+  for (const item of items) {
+    const machine = item.machine || '';
+    const line = item.line || '';
+    if (groups.length > 0) {
+      const last = groups[groups.length - 1];
+      if (last.machine === machine && last.line === line) {
+        last.count += 1;
+        last.items.push(item);
+        continue;
+      }
+    }
+    groups.push({ machine, line, count: 1, items: [item], first: item });
+  }
+  const visible = groups.slice(0, 15);
+  const hidden = groups.slice(15);
+  for (const g of visible) {
+    container.appendChild(makeRow(g));
+  }
+  if (hidden.length > 0) {
+    const details = document.createElement('details');
+    details.className = 'cr-feed-more';
+    const summary = document.createElement('summary');
+    summary.textContent = `Show all ${items.length} events`;
+    details.appendChild(summary);
+    const body = document.createElement('div');
+    body.className = 'cr-feed-more-body';
+    for (const g of hidden) {
+      body.appendChild(makeRow(g));
+    }
+    details.appendChild(body);
+    container.appendChild(details);
+  }
+}
+
 // === Stuck-patterns panel ===
 // Reads stuck_patterns from the same auto-digest-<host>.json gist files
 // that the auto-digest panel uses. Surfaces (project, task) pairs whose
@@ -1823,7 +2074,6 @@ function renderControlRoom(fleetSnaps) {
   container.style.display = '';
 
   feed.sort((a, b) => (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0));
-  const capped = feed.slice(0, 50);
 
   const header = document.createElement('div');
   header.className = 'ad-header';
@@ -1912,7 +2162,8 @@ function renderControlRoom(fleetSnaps) {
   feedWrap.className = 'cr-feed';
   const GOOD = ['success', 'no-changes', 'auto-recovered', 'auto-push-success', 'health-check-pass'];
   const BAD = ['error', 'local-env-broken', 'canary-failed', 'scan-revert', 'clinical-gate-revert', 'health-check-fail', 'auto-push-failed'];
-  for (const f of capped) {
+  const makeAnnunciatorRow = (g) => {
+    const f = g.first;
     const row = document.createElement('div');
     let cls = 'warn';
     if (GOOD.includes(f.outcome)) cls = 'ok';
@@ -1928,16 +2179,24 @@ function renderControlRoom(fleetSnaps) {
     const line = document.createElement('span');
     line.className = 'cr-feed-line';
     line.textContent = f.line || '';
+    if (g.count > 1) {
+      const countBadge = document.createElement('span');
+      countBadge.className = 'cr-feed-count';
+      countBadge.textContent = ' x' + g.count;
+      line.appendChild(countBadge);
+    }
     row.appendChild(t);
     row.appendChild(m);
     row.appendChild(line);
-    feedWrap.appendChild(row);
-  }
-  if (capped.length === 0) {
+    return row;
+  };
+  if (feed.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'ad-detail';
     empty.textContent = 'No recent activity.';
     feedWrap.appendChild(empty);
+  } else {
+    buildGroupedFeed(feedWrap, feed, makeAnnunciatorRow);
   }
   container.appendChild(feedWrap);
 
@@ -2148,7 +2407,6 @@ function renderStuckPatterns(gist) {
     container.style.display = 'none';
     return;
   }
-  container.style.display = '';
 
   // Aggregate per-machine + per-project. Mirrors aggregateFleetStuckPatterns.
   const byMachine = [];
@@ -2182,19 +2440,25 @@ function renderStuckPatterns(gist) {
     (a, b) => b.count - a.count || a.slug.localeCompare(b.slug)
   );
 
-  const header = document.createElement('div');
-  header.className = 'ad-header';
-  header.textContent =
-    `STUCK SKIP PATTERNS — ${totalPatterns} on ${machinesWithPatterns} ` +
+  const details = document.createElement('details');
+  details.className = 'panel-details';
+
+  const summary = document.createElement('summary');
+  summary.className = 'panel-summary ad-header';
+  summary.textContent =
+    `Stuck skip patterns - ${totalPatterns} on ${machinesWithPatterns} ` +
     `${machinesWithPatterns === 1 ? 'machine' : 'machines'} ` +
     `(${projectSet.size} project${projectSet.size === 1 ? '' : 's'})`;
-  container.appendChild(header);
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   // Per-machine rows: list each pattern as "[project:task] reason ×N".
   const machineSection = document.createElement('div');
   machineSection.className = 'ad-section';
   machineSection.textContent = 'By machine';
-  container.appendChild(machineSection);
+  body.appendChild(machineSection);
 
   for (const m of byMachine) {
     if (!m.patterns || m.patterns.length === 0) continue;
@@ -2227,7 +2491,7 @@ function renderStuckPatterns(gist) {
 
     row.appendChild(left);
     row.appendChild(right);
-    container.appendChild(row);
+    body.appendChild(row);
   }
 
   // Per-project rollup.
@@ -2235,7 +2499,7 @@ function renderStuckPatterns(gist) {
     const projSection = document.createElement('div');
     projSection.className = 'ad-section';
     projSection.textContent = 'By project';
-    container.appendChild(projSection);
+    body.appendChild(projSection);
 
     for (const p of byProject) {
       const row = document.createElement('div');
@@ -2261,9 +2525,13 @@ function renderStuckPatterns(gist) {
 
       row.appendChild(left);
       row.appendChild(right);
-      container.appendChild(row);
+      body.appendChild(row);
     }
   }
+
+  details.appendChild(body);
+  container.appendChild(details);
+  container.style.display = '';
 }
 
 // === Test-counts panel ===
@@ -2301,11 +2569,8 @@ function renderTestCounts(gist) {
     container.style.display = 'none';
     return;
   }
-  container.style.display = '';
 
   // Partition snapshots: fresh vs excluded (stale / run-error).
-  // 48h matches the staleHours default in computeDivergence — kept by
-  // hand because the dashboard has no bundler.
   const STALE_HOURS = 48;
   const now = Date.now();
   const staleCutoff = now - STALE_HOURS * 3_600_000;
@@ -2394,8 +2659,7 @@ function renderTestCounts(gist) {
 
   const diverged = tupleSet.length > 1;
 
-  // ----- Header -----
-  // When exclusions are present, the header includes both the on-SHA
+  // When exclusions are present, the summary includes both the on-SHA
   // machine count and the total snapshot count so a 2/5-reporting fleet
   // doesn't visually masquerade as a 2/2-converged one. The "reporting"
   // phrasing side-steps subject-verb agreement (e.g., the awkward "1
@@ -2404,27 +2668,36 @@ function renderTestCounts(gist) {
   const compareLabel = totalSnapshots === onSha.length
     ? `${onSha.length} machine${onSha.length === 1 ? '' : 's'} reporting`
     : `${onSha.length} of ${totalSnapshots} machines reporting`;
-  const header = document.createElement('div');
-  header.className = 'ad-header';
+  let headerText;
   if (diverged) {
-    header.textContent =
+    headerText =
       `TEST COUNTS — DIVERGED on ${(pickSha || '').slice(0, 7)} ` +
       `(${tupleSet.length} tuples across ${compareLabel})`;
   } else if (referenceTuple) {
-    header.textContent =
+    headerText =
       `TEST COUNTS — ${referenceTuple} on ${(pickSha || '').slice(0, 7)} ` +
       `(${compareLabel})`;
   } else {
-    header.textContent = 'TEST COUNTS — no fresh snapshots';
+    headerText = 'TEST COUNTS — no fresh snapshots';
   }
-  container.appendChild(header);
+
+  const details = document.createElement('details');
+  details.className = 'panel-details';
+
+  const summary = document.createElement('summary');
+  summary.className = 'panel-summary ad-header';
+  summary.textContent = headerText;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   // ----- On-SHA machine rows -----
   if (onSha.length > 0) {
     const section = document.createElement('div');
     section.className = 'ad-section';
     section.textContent = 'By machine';
-    container.appendChild(section);
+    body.appendChild(section);
 
     const sorted = onSha.slice().sort((a, b) =>
       String(a.machine).localeCompare(String(b.machine))
@@ -2466,7 +2739,7 @@ function renderTestCounts(gist) {
 
       row.appendChild(left);
       row.appendChild(right);
-      container.appendChild(row);
+      body.appendChild(row);
     }
   }
 
@@ -2483,7 +2756,7 @@ function renderTestCounts(gist) {
     const section = document.createElement('div');
     section.className = 'ad-section';
     section.textContent = 'Not in comparison';
-    container.appendChild(section);
+    body.appendChild(section);
 
     allExcluded.sort((a, b) =>
       String(a.machine).localeCompare(String(b.machine))
@@ -2505,9 +2778,13 @@ function renderTestCounts(gist) {
       left.appendChild(detail);
 
       row.appendChild(left);
-      container.appendChild(row);
+      body.appendChild(row);
     }
   }
+
+  details.appendChild(body);
+  container.appendChild(details);
+  container.style.display = '';
 }
 
 // === Pending-merges panel ===
@@ -2527,107 +2804,111 @@ function renderPendingMerges(gist) {
 
   inflight.sort((a, b) => (a.next_deadline_ms || 0) - (b.next_deadline_ms || 0));
 
-  const header = document.createElement('div');
-  header.className = 'pm-header';
-  header.textContent = `PENDING MERGES (${inflight.length} in flight, ${suspended.length} suspended)`;
-  container.appendChild(header);
+  const details = document.createElement('details');
+  details.className = 'pm-details';
+  details.open = true;
 
-  for (const e of inflight) container.appendChild(buildPmEntry(e, 'inflight'));
-  for (const e of suspended) container.appendChild(buildPmEntry(e, 'suspended'));
-  for (const e of clean) container.appendChild(buildPmEntry(e, 'clean'));
+  const summary = document.createElement('summary');
+  summary.className = 'pm-summary';
+  summary.textContent = `Pending merges - ${inflight.length} in flight, ${suspended.length} suspended`;
+  details.appendChild(summary);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'pm-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'pm-table';
+  const thead = document.createElement('thead');
+  const headTr = document.createElement('tr');
+  for (const h of ['Project', 'PR', 'Replays', 'Next replay', 'Last replay', 'State']) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    headTr.appendChild(th);
+  }
+  thead.appendChild(headTr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const e of inflight) tbody.appendChild(buildPmEntry(e, 'inflight'));
+  for (const e of suspended) tbody.appendChild(buildPmEntry(e, 'suspended'));
+  // Completed-clean watches are history, not workload: show only the most
+  // recent few so the table stays scannable.
+  const CLEAN_SHOWN = 5;
+  clean.sort((a, b) => (b.last_replay_ts_ms || 0) - (a.last_replay_ts_ms || 0));
+  for (const e of clean.slice(0, CLEAN_SHOWN)) tbody.appendChild(buildPmEntry(e, 'clean'));
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  details.appendChild(wrap);
+  if (clean.length > CLEAN_SHOWN) {
+    const more = document.createElement('div');
+    more.className = 'pm-more';
+    more.textContent = `...and ${clean.length - CLEAN_SHOWN} more completed clean`;
+    details.appendChild(more);
+  }
+  container.appendChild(details);
 }
 
 function buildPmEntry(entry, kind) {
-  const div = document.createElement('div');
-  div.className = `pm-entry ${kind}`;
+  const repo = safe(entry?.repo, '?');
+  const prNum = safe(entry?.pr_number, '?');
+  const project = safe(entry?.project_slug, '—');
+  const total = Array.isArray(entry.replay_schedule_ms) ? entry.replay_schedule_ms.length : '?';
+  const done = present(entry.replays_done) ? entry.replays_done : 0;
+  const next = untilMs(entry.next_deadline_ms) || '—';
+  const last = present(entry.last_replay_ts_ms) ? agoMs(entry.last_replay_ts_ms) : '—';
 
-  const title = document.createElement('div');
-  title.className = 'pm-title';
-  title.textContent = `${safe(entry?.repo, '?')}#${safe(entry?.pr_number, '?')}`;
-  div.appendChild(title);
+  const tr = document.createElement('tr');
 
-  if (kind === 'inflight') {
-    if (present(entry.project_slug)) {
-      const proj = document.createElement('div');
-      proj.className = 'pm-line';
-      proj.textContent = `Project: ${entry.project_slug}`;
-      div.appendChild(proj);
-    }
-    const total = Array.isArray(entry.replay_schedule_ms) ? entry.replay_schedule_ms.length : '?';
-    const done = present(entry.replays_done) ? entry.replays_done : 0;
-    const progress = document.createElement('div');
-    progress.className = 'pm-line';
-    progress.textContent = `Replays: ${done} / ${total}`;
-    div.appendChild(progress);
-    const next = untilMs(entry.next_deadline_ms);
-    if (next) {
-      const deadline = document.createElement('div');
-      deadline.className = 'pm-line';
-      deadline.textContent = `Next: ${next}`;
-      div.appendChild(deadline);
-    }
-    if (present(entry.last_replay_ts_ms)) {
-      const last = document.createElement('div');
-      last.className = 'pm-line';
-      last.textContent = `Last replay: ${agoMs(entry.last_replay_ts_ms)}`;
-      div.appendChild(last);
-    }
-  } else if (kind === 'clean') {
-    const total = Array.isArray(entry.replay_schedule_ms)
-      ? entry.replay_schedule_ms.length
-      : (present(entry.replays_done) ? entry.replays_done : '?');
-    const line = document.createElement('div');
-    line.className = 'pm-line green';
-    line.textContent = `✓ All ${total} replays clean`;
-    div.appendChild(line);
-  } else if (kind === 'suspended') {
-    if (present(entry.project_slug)) {
-      const proj = document.createElement('div');
-      proj.className = 'pm-line';
-      proj.textContent = `Project: ${entry.project_slug}`;
-      div.appendChild(proj);
-    }
-    const fail = document.createElement('div');
-    fail.className = 'pm-line red';
-    const exitCode = present(entry.exit_code) ? `, exit ${entry.exit_code}` : '';
-    fail.textContent = `✗ ${safe(entry.failure_mode, 'unknown')}${exitCode}`;
-    div.appendChild(fail);
+  const tdProject = document.createElement('td');
+  tdProject.textContent = project;
+  tr.appendChild(tdProject);
 
-    const callout = document.createElement('div');
-    callout.className = 'pm-suspend-callout';
-    callout.textContent = 'auto_push:false set in local.json — manual reset required';
-    div.appendChild(callout);
+  const tdPr = document.createElement('td');
+  if (typeof repo === 'string' && repo.includes('/') && prNum !== '?') {
+    const a = document.createElement('a');
+    a.href = `https://github.com/${repo}/pull/${prNum}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '#' + prNum;
+    tdPr.appendChild(a);
+  } else {
+    tdPr.textContent = '#' + prNum;
+  }
+  tr.appendChild(tdPr);
 
-    const hasStdout = present(entry.stdout_tail);
-    const hasStderr = present(entry.stderr_tail);
-    if (hasStdout || hasStderr) {
-      const det = document.createElement('details');
-      const sum = document.createElement('summary');
-      sum.textContent = 'stdout / stderr tails';
-      det.appendChild(sum);
-      if (hasStdout) {
-        const lbl = document.createElement('div');
-        lbl.className = 'pm-tail-label';
-        lbl.textContent = 'stdout_tail';
-        det.appendChild(lbl);
-        const pre = document.createElement('pre');
-        pre.textContent = String(entry.stdout_tail);
-        det.appendChild(pre);
-      }
-      if (hasStderr) {
-        const lbl = document.createElement('div');
-        lbl.className = 'pm-tail-label';
-        lbl.textContent = 'stderr_tail';
-        det.appendChild(lbl);
-        const pre = document.createElement('pre');
-        pre.textContent = String(entry.stderr_tail);
-        det.appendChild(pre);
-      }
-      div.appendChild(det);
-    }
+  const tdReplays = document.createElement('td');
+  tdReplays.textContent = kind === 'clean' ? `${total}` : `${done} / ${total}`;
+  tr.appendChild(tdReplays);
+
+  const tdNext = document.createElement('td');
+  tdNext.textContent = kind === 'clean' ? '—' : next;
+  tr.appendChild(tdNext);
+
+  const tdLast = document.createElement('td');
+  tdLast.textContent = last;
+  tr.appendChild(tdLast);
+
+  const tdState = document.createElement('td');
+  const chip = document.createElement('span');
+  chip.className = `pm-chip ${kind}`;
+  chip.textContent = kind;
+  tdState.appendChild(chip);
+  tr.appendChild(tdState);
+
+  if (kind === 'suspended') {
+    const calloutTr = document.createElement('tr');
+    calloutTr.className = 'pm-callout-row';
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.textContent = 'auto_push:false set in local.json - manual reset required';
+    calloutTr.appendChild(td);
+    const frag = document.createDocumentFragment();
+    frag.appendChild(tr);
+    frag.appendChild(calloutTr);
+    return frag;
   }
 
-  return div;
+  return tr;
 }
 
 // === Top-section render functions (Step 2 redesign) ===
@@ -2864,7 +3145,7 @@ function renderTodaysWork(gist, fleetSnaps) {
   const commits = aggregateAutoDigestCommits(gist);
   const projectsTouched = new Set(commits.map((c) => c.slug));
 
-  // Pending merges — read for the count + a few links.
+  // Pending merges — read for the pointer line count.
   const pmData = parseFile(gist, 'pending-merges.json');
   const pmEntries = Array.isArray(pmData?.entries) ? pmData.entries : [];
   const pmInflight = pmEntries.filter((e) => e && !e.completed && e.next_deadline_ms != null);
@@ -2892,86 +3173,73 @@ function renderTodaysWork(gist, fleetSnaps) {
   header.textContent = "Today's work";
   container.appendChild(header);
 
-  // Row 1: dispatches today vs cap. With a bar when we have a cap.
-  if (hasCap || usedSum > 0) {
-    const row = document.createElement('div');
-    row.className = 'tw-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = 'Dispatches today';
-    row.appendChild(lbl);
+  // Stat tiles row: dispatches, auto-commits, merged to main.
+  const tiles = document.createElement('div');
+  tiles.className = 'stat-tiles';
 
-    if (hasCap && capSum > 0) {
-      const ratio = Math.min(1, usedSum / capSum);
-      const bar = document.createElement('div');
-      bar.className = 'tw-bar';
-      const fill = document.createElement('div');
-      fill.className = 'tw-bar-fill';
-      if (ratio >= 1) fill.classList.add('red');
-      else if (ratio >= 0.8) fill.classList.add('yellow');
-      fill.style.width = `${ratio * 100}%`;
-      bar.appendChild(fill);
-      row.appendChild(bar);
-    }
+  const tileDisp = document.createElement('div');
+  tileDisp.className = 'stat-tile';
+  const numDisp = document.createElement('div');
+  numDisp.className = 'stat-num';
+  numDisp.textContent = hasCap ? `${usedSum} / ${capSum}` : String(usedSum);
+  const lblDisp = document.createElement('div');
+  lblDisp.className = 'stat-label';
+  lblDisp.textContent = 'Dispatches today';
+  tileDisp.appendChild(numDisp);
+  tileDisp.appendChild(lblDisp);
+  tiles.appendChild(tileDisp);
 
-    const val = document.createElement('span');
-    val.className = 'tw-value accent';
-    val.textContent = hasCap ? `${usedSum} / ${capSum}` : String(usedSum);
-    row.appendChild(val);
-    container.appendChild(row);
+  const tileCommits = document.createElement('div');
+  tileCommits.className = 'stat-tile';
+  const numCommits = document.createElement('div');
+  numCommits.className = 'stat-num';
+  numCommits.textContent = String(commits.length);
+  const lblCommits = document.createElement('div');
+  lblCommits.className = 'stat-label';
+  lblCommits.textContent = 'Auto-commits';
+  tileCommits.appendChild(numCommits);
+  tileCommits.appendChild(lblCommits);
+  if (projectsTouched.size > 0) {
+    const subCommits = document.createElement('div');
+    subCommits.className = 'stat-sublabel';
+    subCommits.textContent = `across ${projectsTouched.size} project${projectsTouched.size === 1 ? '' : 's'}`;
+    tileCommits.appendChild(subCommits);
   }
+  tiles.appendChild(tileCommits);
 
-  // Row 2: auto-commits today.
-  if (commits.length > 0) {
-    const row = document.createElement('div');
-    row.className = 'tw-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = 'Auto-commits';
-    const val = document.createElement('span');
-    val.className = 'tw-value';
-    const projWord = projectsTouched.size === 1 ? 'project' : 'projects';
-    val.textContent = `${commits.length} commits across ${projectsTouched.size} ${projWord}`;
-    row.appendChild(lbl);
-    row.appendChild(val);
-    container.appendChild(row);
-  }
-
-  // Row 2b: PRs merged to main in the last 24h (mergedToday computed above).
+  const tileMerged = document.createElement('div');
+  tileMerged.className = 'stat-tile';
+  const numMerged = document.createElement('div');
+  numMerged.className = 'stat-num';
+  numMerged.textContent = String(mergedToday);
+  const lblMerged = document.createElement('div');
+  lblMerged.className = 'stat-label';
+  lblMerged.textContent = 'Merged to main';
+  tileMerged.appendChild(numMerged);
+  tileMerged.appendChild(lblMerged);
   if (mergedToday > 0) {
-    const row = document.createElement('div');
-    row.className = 'tw-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = 'Merged to main';
-    const val = document.createElement('span');
-    val.className = 'tw-value accent';
-    val.textContent = `${mergedToday} PR${mergedToday === 1 ? '' : 's'} (24h)`;
-    row.appendChild(lbl);
-    row.appendChild(val);
-    container.appendChild(row);
+    const subMerged = document.createElement('div');
+    subMerged.className = 'stat-sublabel';
+    subMerged.textContent = '24h';
+    tileMerged.appendChild(subMerged);
+  }
+  tiles.appendChild(tileMerged);
+
+  container.appendChild(tiles);
+
+  // Burn bar for dispatches.
+  if (hasCap && capSum > 0) {
+    const pct = (usedSum / capSum) * 100;
+    container.appendChild(buildBurnBar('Dispatches today', pct, { warnAt: 80 }));
   }
 
-  // Row 3: pending merges (count + up to 3 quick links).
+  // Pending merges pointer line.
   if (pmInflight.length > 0) {
-    const row = document.createElement('div');
-    row.className = 'tw-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = 'Auto-merges open';
-    const val = document.createElement('span');
-    val.className = 'tw-value';
+    const line = document.createElement('div');
+    line.className = 'tw-row';
     const word = pmInflight.length === 1 ? 'PR' : 'PRs';
-    val.appendChild(document.createTextNode(`${pmInflight.length} ${word} waiting `));
-    for (const e of pmInflight.slice(0, 3)) {
-      const tag = document.createElement('span');
-      tag.className = 'tw-pr-link';
-      tag.textContent = `${safe(e.repo, '?')}#${safe(e.pr_number, '?')}`;
-      val.appendChild(tag);
-    }
-    row.appendChild(lbl);
-    row.appendChild(val);
-    container.appendChild(row);
+    line.textContent = `${pmInflight.length} ${word} waiting - see Pending merges below`;
+    container.appendChild(line);
   }
 }
 
@@ -3033,55 +3301,176 @@ function renderShipped(fleetSnaps) {
   header.textContent = `Shipped — merged to main (${rows.length} in 30d, ${in7d} in 7d)`;
   container.appendChild(header);
 
-  for (const r of rows.slice(0, 12)) {
-    const row = document.createElement('div');
-    row.className = 'tw-row';
-
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = r.slug;
-    row.appendChild(lbl);
-
-    const val = document.createElement('span');
-    val.className = 'tw-value';
-    const parts = [];
-    if (r.prNumber != null) parts.push('#' + r.prNumber);
-    parts.push(r.title || r.task || '(no title)');
-    const text = parts.join(' · ');
-    // Scheme check: tracker titles/urls are external text; only https links
-    // become anchors (a javascript: href would execute — textContent alone
-    // doesn't cover href).
-    if (typeof r.url === 'string' && /^https:\/\//.test(r.url)) {
-      const a = document.createElement('a');
-      a.setAttribute('href', r.url);
-      a.setAttribute('target', '_blank');
-      a.setAttribute('rel', 'noopener');
-      a.textContent = text;
-      val.appendChild(a);
-    } else {
-      val.appendChild(document.createTextNode(text));
+  // Group consecutive same-project/same-description rows.
+  const groups = [];
+  for (const r of rows) {
+    const parsed = displayPrTitle(r.title);
+    const text = parsed.text || '(no title)';
+    if (groups.length > 0) {
+      const last = groups[groups.length - 1];
+      if (last.slug === r.slug && last.text === text) {
+        last.items.push(r);
+        continue;
+      }
     }
-    val.appendChild(document.createTextNode(' · ' + (r.autonomous ? 'auto' : 'manual')));
-    const ms = Date.parse(r.mergedAt);
-    if (Number.isFinite(ms)) {
-      val.appendChild(document.createTextNode(' · ' + agoMs(ms)));
-    }
-    row.appendChild(val);
-    container.appendChild(row);
+    groups.push({ slug: r.slug, text, task: parsed.task, items: [r] });
   }
-  if (rows.length > 12) {
+
+  const table = document.createElement('table');
+  table.className = 'ship-table';
+  const colgroup = document.createElement('colgroup');
+  const widths = ['20%', '14%', '36%', '14%', '16%'];
+  for (const w of widths) {
+    const col = document.createElement('col');
+    col.style.width = w;
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
+
+  const thead = document.createElement('thead');
+  const headTr = document.createElement('tr');
+  for (const h of ['Project', 'Task', 'Description', 'Age', 'Kind']) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    headTr.appendChild(th);
+  }
+  thead.appendChild(headTr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  const displayLimit = 12;
+  for (let i = 0; i < Math.min(groups.length, displayLimit); i++) {
+    tbody.appendChild(buildShippedGroupRow(groups[i]));
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  if (rows.length > displayLimit) {
     const more = document.createElement('div');
-    more.className = 'tw-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'tw-label';
-    lbl.textContent = '';
-    const val = document.createElement('span');
-    val.className = 'tw-value';
-    val.textContent = `...and ${rows.length - 12} more in the last 30 days`;
-    more.appendChild(lbl);
-    more.appendChild(val);
+    more.className = 'ship-more';
+    more.textContent = `...and ${rows.length - displayLimit} more in the last 30 days`;
     container.appendChild(more);
   }
+}
+
+function buildShippedGroupRow(g) {
+  const first = g.items[0];
+  const ms = Date.parse(first.mergedAt);
+  const age = Number.isFinite(ms) ? agoMs(ms) : '—';
+  const isAuto = first.autonomous === true;
+
+  const tr = document.createElement('tr');
+  if (g.items.length >= 2) {
+    const td = document.createElement('td');
+    td.colSpan = 5;
+
+    const details = document.createElement('details');
+    details.className = 'ship-group';
+
+    const summary = document.createElement('summary');
+    summary.className = 'ship-summary-row';
+
+    const projSpan = document.createElement('span');
+    projSpan.className = 'ship-col-proj';
+    projSpan.textContent = g.slug;
+    summary.appendChild(projSpan);
+
+    const taskSpan = document.createElement('span');
+    taskSpan.className = 'ship-col-task';
+    if (g.task) {
+      const badge = document.createElement('span');
+      badge.className = 'task-badge';
+      badge.textContent = g.task;
+      taskSpan.appendChild(badge);
+    }
+    summary.appendChild(taskSpan);
+
+    const descSpan = document.createElement('span');
+    descSpan.className = 'ship-col-desc';
+    if (typeof first.url === 'string' && /^https:\/\//.test(first.url)) {
+      const a = document.createElement('a');
+      a.href = first.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = g.text;
+      descSpan.appendChild(a);
+    } else {
+      descSpan.textContent = g.text;
+    }
+    summary.appendChild(descSpan);
+
+    const ageSpan = document.createElement('span');
+    ageSpan.className = 'ship-col-age';
+    ageSpan.textContent = age;
+    summary.appendChild(ageSpan);
+
+    const chipSpan = document.createElement('span');
+    chipSpan.className = 'ship-col-chip';
+    const chip = document.createElement('span');
+    chip.className = isAuto ? 'tag ok' : 'tag dim';
+    chip.textContent = isAuto ? 'auto' : 'manual';
+    chipSpan.appendChild(chip);
+    const countBadge = document.createElement('span');
+    countBadge.className = 'ship-count';
+    countBadge.textContent = 'x' + g.items.length;
+    chipSpan.appendChild(countBadge);
+    summary.appendChild(chipSpan);
+
+    details.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'ship-group-body';
+    for (const it of g.items) {
+      const line = document.createElement('div');
+      const itMs = Date.parse(it.mergedAt);
+      const itAge = Number.isFinite(itMs) ? agoMs(itMs) : '—';
+      const num = it.prNumber != null ? '#' + it.prNumber : '(no #)';
+      line.textContent = `${num} - ${itAge}`;
+      body.appendChild(line);
+    }
+    details.appendChild(body);
+
+    td.appendChild(details);
+    tr.appendChild(td);
+  } else {
+    const projTd = document.createElement('td');
+    projTd.textContent = g.slug;
+    tr.appendChild(projTd);
+
+    const taskTd = document.createElement('td');
+    if (g.task) {
+      const badge = document.createElement('span');
+      badge.className = 'task-badge';
+      badge.textContent = g.task;
+      taskTd.appendChild(badge);
+    }
+    tr.appendChild(taskTd);
+
+    const descTd = document.createElement('td');
+    if (typeof first.url === 'string' && /^https:\/\//.test(first.url)) {
+      const a = document.createElement('a');
+      a.href = first.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = g.text;
+      descTd.appendChild(a);
+    } else {
+      descTd.textContent = g.text;
+    }
+    tr.appendChild(descTd);
+
+    const ageTd = document.createElement('td');
+    ageTd.textContent = age;
+    tr.appendChild(ageTd);
+
+    const kindTd = document.createElement('td');
+    const chip = document.createElement('span');
+    chip.className = isAuto ? 'tag ok' : 'tag dim';
+    chip.textContent = isAuto ? 'auto' : 'manual';
+    kindTd.appendChild(chip);
+    tr.appendChild(kindTd);
+  }
+  return tr;
 }
 
 // "Is rotation working?" — derives from auto-digest commit timeline. Hidden
@@ -3441,12 +3830,17 @@ function renderRecentSubstitutions(gist, fleetSnaps) {
     container.style.display = 'none';
     return;
   }
-  container.style.display = '';
 
-  const header = document.createElement('div');
-  header.className = 'ts-header';
-  header.textContent = `Recent soft substitutions (${rows.length})`;
-  container.appendChild(header);
+  const details = document.createElement('details');
+  details.className = 'panel-details';
+
+  const summary = document.createElement('summary');
+  summary.className = 'panel-summary ts-header';
+  summary.textContent = `Recent soft substitutions (${rows.length})`;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   const table = document.createElement('table');
   table.className = 'rs-table';
@@ -3472,7 +3866,11 @@ function renderRecentSubstitutions(gist, fleetSnaps) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  container.appendChild(table);
+  body.appendChild(table);
+
+  details.appendChild(body);
+  container.appendChild(details);
+  container.style.display = '';
 }
 
 // === Error context cards ===
@@ -3498,12 +3896,18 @@ function renderErrorContext(fleetSnaps) {
     container.style.display = 'none';
     return;
   }
-  container.style.display = '';
 
-  const header = document.createElement('div');
-  header.className = 'ts-header';
-  header.textContent = `Errors needing attention (${cards.length})`;
-  container.appendChild(header);
+  const details = document.createElement('details');
+  details.className = 'panel-details';
+  details.open = true;
+
+  const summary = document.createElement('summary');
+  summary.className = 'panel-summary ts-header';
+  summary.textContent = `Errors needing attention (${cards.length})`;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   for (const c of cards.slice(0, 3)) {
     const ctx = c.ctx;
@@ -3549,24 +3953,28 @@ function renderErrorContext(fleetSnaps) {
       card.appendChild(action);
     }
 
-    const body = document.createElement('pre');
-    body.className = 'ec-pre';
-    body.textContent = ctx.copy_context || formatCopyContext(ctx);
-    body.style.display = 'none';
-    card.appendChild(body);
+    const pre = document.createElement('pre');
+    pre.className = 'ec-pre';
+    pre.textContent = ctx.copy_context || formatCopyContext(ctx);
+    pre.style.display = 'none';
+    card.appendChild(pre);
 
     const toggle = document.createElement('span');
     toggle.className = 'ec-toggle';
     toggle.textContent = 'Show full context';
     toggle.onclick = () => {
-      const hidden = body.style.display === 'none';
-      body.style.display = hidden ? '' : 'none';
+      const hidden = pre.style.display === 'none';
+      pre.style.display = hidden ? '' : 'none';
       toggle.textContent = hidden ? 'Hide full context' : 'Show full context';
     };
     card.appendChild(toggle);
 
-    container.appendChild(card);
+    body.appendChild(card);
   }
+
+  details.appendChild(body);
+  container.appendChild(details);
+  container.style.display = '';
 }
 
 function formatCopyContext(ctx) {
