@@ -2111,12 +2111,17 @@ function renderControlRoom(fleetSnaps) {
     const badge = document.createElement('span');
     badge.className = 'cr-comp-badge';
     badge.textContent = label;
+    // Substantive/infra revert split (2026-07-15). Null-guarded: fleet-*.json
+    // snapshots from machines that haven't shipped the split yet lack the fields.
+    const revertSplit = ((a.reverted_substantive || 0) + (a.reverted_infra || 0)) > 0
+      ? ' (' + (a.reverted_substantive || 0) + ' subst / ' + (a.reverted_infra || 0) + ' infra)'
+      : '';
     const detail = document.createElement('span');
     detail.className = 'cr-comp-detail';
     detail.textContent = mergeTxt + ' · ' + rateTxt
       + ' · ' + autoTxt
       + ' · authored ' + comp.windowDays + 'd: ' + (a.success || 0) + ' ok / '
-      + (a.reverted || 0) + ' reverted / ' + (a.error || 0) + ' err'
+      + (a.reverted || 0) + ' reverted' + revertSplit + ' / ' + (a.error || 0) + ' err'
       + ' · repos: ' + comp.buildRepos.join(', ');
     cb.appendChild(badge);
     cb.appendChild(detail);
@@ -2324,6 +2329,11 @@ function renderConstructionTimeline(container, withCR) {
         const lbl = document.createElement('div');
         lbl.className = 'cr-roadmap-label';
         lbl.textContent = 'ROADMAP ' + (s.roadmap.done || 0) + ' / ' + s.roadmap.total + ' systems built';
+        // Exhausted roadmap = feature dispatch gated off until the operator
+        // extends it (2026-07-15). Same computation as the fill width below.
+        if ((s.roadmap.done || 0) >= s.roadmap.total) {
+          lbl.textContent = 'ROADMAP COMPLETE (' + s.roadmap.total + '/' + s.roadmap.total + ') - extend me';
+        }
         rm.appendChild(lbl);
         const bar = document.createElement('div');
         bar.className = 'cr-roadmap-bar';
