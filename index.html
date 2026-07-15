@@ -66,7 +66,7 @@
   /* Telemetry stays monospace: identifiers, log lines, code wells. Prose
      (sentences, labels, headlines) rides the UI face set on body. */
   pre, code, .cr-feed, .rs-table, .rot-slug, .tw-pr-link, .cr-chip,
-  .cr-timeline-slug, .cr-timeline-sha, .cr-timeline-diff, .wh-kimi {
+  .cr-timeline-slug, .cr-timeline-sha, .cr-timeline-diff, .wh-kimi, .wh-quota {
     font-family: var(--font-mono);
   }
   /* Desktop bump — at >=900px viewport the 660px column leaves the
@@ -529,6 +529,15 @@
   .wh-kimi.green { color: var(--green); }
   .wh-kimi.red { color: var(--red); }
   .wh-kimi.unknown { color: var(--text-dim); }
+  .wh-quota { flex-basis: 100%; padding-left: 110px; padding-top: 2px; font-variant-numeric: tabular-nums; word-break: break-word; }
+  @media (max-width: 399px) {
+    .wh-quota { padding-left: 0; }
+  }
+  .wh-quota.green { color: var(--green); }
+  .wh-quota.yellow { color: var(--yellow); }
+  .wh-quota.orange { color: var(--amber); }
+  .wh-quota.red { color: var(--red); }
+  .wh-quota.unknown { color: var(--text-dim); }
 
   /* Today's work — 3-row mini-table. */
   .tw-row {
@@ -3103,6 +3112,9 @@ function renderWhatsHappening(fleetSnaps) {
     const kimiEl = buildKimiGateChip(fleet);
     if (kimiEl) row.appendChild(kimiEl);
 
+    const quotaEl = buildQuotaTierChip(fleet);
+    if (quotaEl) row.appendChild(quotaEl);
+
     container.appendChild(row);
   }
 }
@@ -3126,6 +3138,30 @@ function buildKimiGateChip(fleet) {
   const el = document.createElement('span');
   el.className = `wh-kimi ${gateClass}`;
   el.textContent = `kimi: ${gateText}${reason}${headroom}`;
+  return el;
+}
+
+function buildQuotaTierChip(fleet) {
+  // Per-pool quota tiers (opus/sonnet/kimi). Only render when a quota-state
+  // snapshot exists for this machine (mirrors buildKimiGateChip's guard). The
+  // chip's severity class tracks the WORST binding pool so an opus-red machine
+  // reads red at a glance -- that is the state that triggered an engine demotion.
+  if (!present(fleet?.quota_generated_at)) return null;
+  const parts = [];
+  const fmt = (label, tier, pct) => {
+    if (!present(tier)) return;
+    const p = (pct !== null && pct !== undefined) ? `(${pct}%)` : '';
+    parts.push(`${label}=${String(tier).toUpperCase()}${p}`);
+  };
+  fmt('opus', fleet.quota_opus_tier, fleet.quota_opus_pct_used);
+  fmt('sonnet', fleet.quota_sonnet_tier, fleet.quota_sonnet_pct_used);
+  fmt('kimi', fleet.quota_kimi_tier, fleet.quota_kimi_pct_used);
+  if (parts.length === 0) return null;
+  const worst = present(fleet.quota_worst_tier) ? fleet.quota_worst_tier : 'unknown';
+  const cls = ['green', 'yellow', 'orange', 'red'].includes(worst) ? worst : 'unknown';
+  const el = document.createElement('span');
+  el.className = `wh-quota ${cls}`;
+  el.textContent = `quota: ${parts.join(' ')}`;
   return el;
 }
 
