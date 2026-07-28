@@ -476,9 +476,10 @@
     font-size: 15px; line-height: 1.4;
   }
   .banner-v2 > *:not(:last-child) { margin-right: 12px; }
-  .banner-v2.ok    { background: var(--green-bg); border: 1px solid var(--green);  color: var(--green); }
-  .banner-v2.warn  { background: var(--yellow-bg); border: 1px solid var(--yellow); color: var(--yellow); }
-  .banner-v2.err   { background: var(--red-bg); border: 1px solid var(--red);    color: var(--red); }
+  .banner-v2.ok      { background: var(--green-bg); border: 1px solid var(--green);  color: var(--green); }
+  .banner-v2.warn    { background: var(--yellow-bg); border: 1px solid var(--yellow); color: var(--yellow); }
+  .banner-v2.err     { background: var(--red-bg); border: 1px solid var(--red);    color: var(--red); }
+  .banner-v2.neutral { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); }
   .banner-v2 .banner-text { flex: 1; min-width: 0; font-weight: 600; word-break: break-word; }
   .banner-v2 .banner-detail {
     font-size: 13px; font-weight: 400; color: var(--text-dim);
@@ -1396,13 +1397,17 @@ const TROUBLED_OUTCOMES = new Set([
   'health-check-fail',
 ]);
 
-function computeMachineStatus(fleet) {
+// Compounding-status rank for control-room banner and fleet banner. Worst wins.
+const COMP_RANK = { stalled: 3, 'compounding-manual': 3, compounding: 2, idle: 1 };
+
+// ---- BEGIN computeMachineStatus ----
+function computeMachineStatus(fleet, nowMs = Date.now()) {
   const errors = Number(fleet?.consecutive_errors) || 0;
   const lastRunMs = fleet?.last_run_ts
     ? new Date(fleet.last_run_ts).getTime()
     : null;
   const ageHrs = lastRunMs && Number.isFinite(lastRunMs)
-    ? (Date.now() - lastRunMs) / 3600000
+    ? (nowMs - lastRunMs) / 3600000
     : Infinity;
 
   if (errors >= 3 || ageHrs > 24) return 'broken';
@@ -1420,6 +1425,7 @@ function computeMachineStatus(fleet) {
   }
   return 'idle';
 }
+// ---- END computeMachineStatus ----
 
 // Build a status dot DOM node — replaces the platform-rendered emoji set
 // (see .status-dot CSS comment). Falls back to 'idle' when the state is
@@ -2095,7 +2101,6 @@ function renderControlRoom(fleetSnaps) {
   // green/liveness from masking a dead compound loop. Build-repo data is
   // laptop-only, so pick the machine that reports build repos (worst status wins).
   let comp = null;
-  const COMP_RANK = { stalled: 3, 'compounding-manual': 3, compounding: 2, idle: 1 };
   for (const s of withCR) {
     const c = s.control_room.compounding;
     if (c && Array.isArray(c.buildRepos) && c.buildRepos.length) {
@@ -2965,17 +2970,13 @@ function aggregateAutoDigestCommits(gist) {
   return out;
 }
 
-// Banner v2 — one plain-English sentence that answers "is the dispatcher
-// working?". Replaces the legacy uppercase-state-+-reason-code banner.
-// Tier mapping per PLAN-dashboard-redesign.md §Banner.
-function renderBannerV2(gist, fleetSnaps) {
-  const banner = document.getElementById('healthBanner');
-  banner.innerHTML = '';
-
-  // Per-machine status for fleet-wide aggregation.
-  const statuses = fleetSnaps.map(computeMachineStatus);
+// ---- BEGIN computeBannerVerdict ----
+function computeBannerVerdict(fleetSnaps, statuses) {
   const anyBroken = statuses.includes('broken');
   const anyWaiting = statuses.includes('waiting');
+  const running = statuses.includes('running');
+  const idle = statuses.includes('idle');
+
   const recentSnaps = fleetSnaps.filter((f) => {
     if (!f.last_run_ts) return false;
     const hrs = (Date.now() - new Date(f.last_run_ts).getTime()) / 3600000;
@@ -2984,12 +2985,142 @@ function renderBannerV2(gist, fleetSnaps) {
   const allDoneForDay = recentSnaps.length > 0 && recentSnaps.every((f) =>
     f.last_run_reason === 'daily-quota-reached' || f.last_run_reason === 'user-active'
   );
-  // "Fleet has no work to do" — every recent machine returned the same
-  // benign no-eligible-projects skip. Distinct from done-for-the-day: the
-  // budget is fine, the rotation backlog is just empty.
   const allNoWork = recentSnaps.length > 0 && recentSnaps.every((f) =>
     f.last_run_reason === 'no-eligible-projects'
   );
+
+  // Compounding facts are aggregated as ORTHOGONAL values, not by picking one
+  // "worst" snapshot. COMP_RANK ties 'stalled' and 'compounding-manual' at 3, so
+  // a rank-based pick kept whichever appeared FIRST and made the whole verdict
+  // depend on array order -- [stalled, manual] and [manual, stalled] returned
+  // different banners for the same fleet (Sol review, 2026-07-28).
+  const compSnaps = fleetSnaps
+    .map((s) => s?.control_room?.compounding)
+    .filter((c) => c && Array.isArray(c.buildRepos) && c.buildRepos.length);
+  const tracking = compSnaps.length > 0;
+  const anyStalled = compSnaps.some((c) => c.status === 'stalled');
+  const autonomousMerges = compSnaps.reduce((n, c) => n + (c.autonomousMerges || 0), 0);
+  const manualMerges = compSnaps.reduce((n, c) => n + (c.manualMerges || 0), 0);
+  const windowDays = compSnaps.find((c) => c.windowDays)?.windowDays ?? 7;
+
+  // "Needs attention", NOT "blocked at auto-push": TROUBLED_OUTCOMES also holds
+  // reverted / drift-alert / local-task-failed / health-check-fail, none of which
+  // are auto-push blocks. The old copy asserted a cause it had not established.
+  const troubledSnaps = fleetSnaps.filter((f) => TROUBLED_OUTCOMES.has(f?.last_run_outcome));
+  const troubled = troubledSnaps.length;
+  const troubledKinds = [...new Set(troubledSnaps.map((f) => f.last_run_outcome))].sort().join(', ');
+  const detail = troubled > 0 ? `${troubled} needing attention: ${troubledKinds}` : null;
+
+  if (anyBroken) {
+    const broken = statuses.filter((s) => s === 'broken').length;
+    return {
+      tier: 'err',
+      dotState: 'broken',
+      headline: broken === 1
+        ? 'Something is wrong on one machine. See attention list below.'
+        : `Something is wrong on ${broken} machines. See attention list below.`,
+      detail,
+    };
+  }
+  if (anyStalled) {
+    return {
+      tier: 'warn',
+      dotState: 'waiting',
+      headline: `Nothing has landed in ${windowDays} days — compounding stalled.`,
+      detail,
+    };
+  }
+  if (troubled > 0) {
+    return {
+      tier: 'warn',
+      dotState: 'waiting',
+      headline: troubled === 1
+        ? '1 machine needs attention.'
+        : `${troubled} machines need attention.`,
+      detail,
+    };
+  }
+  if (allDoneForDay) {
+    return {
+      tier: 'warn',
+      dotState: 'waiting',
+      headline: 'Done for the day. Resets at UTC midnight.',
+      detail,
+    };
+  }
+  if (allNoWork) {
+    return {
+      tier: 'neutral',
+      dotState: 'waiting',
+      headline: 'Fleet has no work to do. Rotation backlog may be empty.',
+      detail,
+    };
+  }
+  if (anyWaiting && !running && !idle) {
+    return {
+      tier: 'warn',
+      dotState: 'waiting',
+      headline: 'Fleet is waiting. No machine has run a successful cycle recently.',
+      detail,
+    };
+  }
+  // Only AUTONOMOUS merges earn reassurance. control-room.mjs defines
+  // 'compounding-manual' as "autonomous loop not closing", so counting manual
+  // merges as landing would have said "Everything is fine." about precisely the
+  // state that means the system is not working (Sol review, 2026-07-28).
+  if (autonomousMerges > 0) {
+    return {
+      tier: 'ok',
+      dotState: 'running',
+      headline: 'Everything is fine.',
+      detail,
+    };
+  }
+  if (manualMerges > 0) {
+    return {
+      tier: 'neutral',
+      dotState: 'waiting',
+      headline: manualMerges === 1
+        ? '1 manual merge, no autonomous merges — the loop is not closing.'
+        : `${manualMerges} manual merges, no autonomous merges — the loop is not closing.`,
+      detail,
+    };
+  }
+  // No build repos means there is no measurement source at all. Claiming
+  // "nothing has landed in N days" would assert a fact we never measured, and
+  // would persist forever.
+  if (!tracking) {
+    return {
+      tier: 'neutral',
+      dotState: 'waiting',
+      headline: 'No build repos in rotation — landing status unavailable.',
+      detail,
+    };
+  }
+  return {
+    tier: 'neutral',
+    dotState: 'waiting',
+    headline: `Nothing has landed in ${windowDays} days.`,
+    detail,
+  };
+}
+// ---- END computeBannerVerdict ----
+
+// Banner v2 — one plain-English sentence that answers "is the dispatcher
+// working?". Replaces the legacy uppercase-state-+-reason-code banner.
+// Tier mapping per PLAN-dashboard-redesign.md §Banner.
+function renderBannerV2(gist, fleetSnaps) {
+  const banner = document.getElementById('healthBanner');
+  banner.innerHTML = '';
+
+  const statuses = fleetSnaps.map((f) => computeMachineStatus(f));
+  const verdict = computeBannerVerdict(fleetSnaps, statuses);
+
+  const recentSnaps = fleetSnaps.filter((f) => {
+    if (!f.last_run_ts) return false;
+    const hrs = (Date.now() - new Date(f.last_run_ts).getTime()) / 3600000;
+    return hrs < STALE_HOURS;
+  });
 
   // Fleet-aggregate "last commit shipped" and counts for the optional
   // detail line.
@@ -2997,42 +3128,21 @@ function renderBannerV2(gist, fleetSnaps) {
   const checkedIn = recentSnaps.length;
   const total = fleetSnaps.length;
 
-  // tier drives the banner's color band; dotState picks the leading status
-  // dot (broken/waiting/running) so the visual reads at a glance even with
-  // the headline copy hidden by line-wrap on narrow viewports.
-  let tier, dotState, headline;
-  if (anyBroken) {
-    tier = 'err'; dotState = 'broken';
-    const broken = statuses.filter((s) => s === 'broken').length;
-    headline = broken === 1
-      ? 'Something is wrong on one machine. See attention list below.'
-      : `Something is wrong on ${broken} machines. See attention list below.`;
-  } else if (allDoneForDay) {
-    tier = 'warn'; dotState = 'waiting';
-    headline = 'Done for the day. Resets at UTC midnight.';
-  } else if (allNoWork) {
-    tier = 'warn'; dotState = 'waiting';
-    headline = 'Fleet has no work to do. Rotation backlog may be empty.';
-  } else if (anyWaiting && !statuses.includes('running') && !statuses.includes('idle')) {
-    tier = 'warn'; dotState = 'waiting';
-    headline = 'Fleet is waiting. No machine has run a successful cycle recently.';
-  } else {
-    tier = 'ok'; dotState = 'running';
-    headline = 'Everything is fine.';
-  }
-
   const div = document.createElement('div');
-  div.className = `banner-v2 ${tier}`;
+  div.className = `banner-v2 ${verdict.tier}`;
 
-  div.appendChild(makeStatusDot(dotState, 'lg'));
+  div.appendChild(makeStatusDot(verdict.dotState, 'lg'));
 
   const text = document.createElement('div');
   text.className = 'banner-text';
-  text.textContent = headline;
+  text.textContent = verdict.headline;
 
   // Detail line — only when fleet-aggregate data is available. Keeps the
   // happy path single-line.
   const detailParts = [];
+  if (verdict.detail) {
+    detailParts.push(verdict.detail);
+  }
   if (fleetAgg.ts) {
     const fleetMs = Date.now() - new Date(fleetAgg.ts).getTime();
     if (Number.isFinite(fleetMs) && fleetMs >= 0) {
