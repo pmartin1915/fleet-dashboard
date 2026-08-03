@@ -2,16 +2,22 @@
   "name": "Dispatcher Fleet",
   "short_name": "Fleet",
   "description": "Budget-aware autonomous dispatch fleet monitor",
-  "start_url": "./",
+  "start_url": "./fleet-dashboard.html",
   "display": "standalone",
   "background_color": "#1a1b26",
   "theme_color": "#1a1b26",
   "icons": [
     {
+      "src": "./fuzzball-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ]
 }
