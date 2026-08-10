@@ -530,6 +530,7 @@
   .wh-kimi.green { color: var(--green); }
   .wh-kimi.red { color: var(--red); }
   .wh-kimi.unknown { color: var(--text-dim); }
+  .wh-kimi.stale { color: var(--text-dim); font-style: italic; }
   .wh-quota { flex-basis: 100%; padding-left: 110px; padding-top: 2px; font-variant-numeric: tabular-nums; word-break: break-word; }
   @media (max-width: 399px) {
     .wh-quota { padding-left: 0; }
@@ -539,6 +540,7 @@
   .wh-quota.orange { color: var(--amber); }
   .wh-quota.red { color: var(--red); }
   .wh-quota.unknown { color: var(--text-dim); }
+  .wh-quota.stale { color: var(--text-dim); font-style: italic; }
 
   /* Today's work — 3-row mini-table. */
   .tw-row {
@@ -3261,11 +3263,38 @@ function renderWhatsHappening(fleetSnaps) {
   }
 }
 
+// MIRRORS scripts/lib/stale-tag.mjs — keep in sync. Browser-side duplicate
+// because this page ships as static HTML with no build step (same pattern as
+// aggregateLastDispatch below). These snapshot fields are copied forward
+// verbatim on every fleet publish, so a months-old reading prints identically
+// to a live one — the Kimi lamps froze on 2026-05-25 fleet-wide and nothing
+// on this page said so. Fail-closed: missing, unparseable, and future
+// (clock-skewed) timestamps all count as stale.
+const STALE_TELEMETRY_HOURS = 24;
+const FUTURE_TOLERANCE_MS = 5 * 60_000;
+// Returns null when fresh, otherwise the do-not-trust suffix to display.
+function telemetryStaleLabel(generatedAt) {
+  if (!generatedAt) return 'age unknown, do not trust';
+  const t = new Date(generatedAt).getTime();
+  if (!Number.isFinite(t)) return 'age unknown, do not trust';
+  const ageMs = Date.now() - t;
+  if (ageMs < -FUTURE_TOLERANCE_MS) return 'future timestamp, clock skew, do not trust';
+  if (ageMs > STALE_TELEMETRY_HOURS * 3_600_000) return `${ago(generatedAt)} old, do not trust`;
+  return null;
+}
+
 function buildKimiGateChip(fleet) {
   // Gate render is conditional on a kimi snapshot existing for this machine —
   // mirrors remote-status.mjs:177 (only print the Kimi line when generated_at
   // is present; otherwise the gist write-side just hadn't emitted it yet).
   if (!present(fleet?.kimi_generated_at)) return null;
+  const kimiStale = telemetryStaleLabel(fleet.kimi_generated_at);
+  if (kimiStale) {
+    const el = document.createElement('span');
+    el.className = 'wh-kimi stale';
+    el.textContent = `kimi: STALE (${kimiStale})`;
+    return el;
+  }
   const auth = fleet.kimi_dispatch_authorized;
   let gateClass, gateText;
   if (auth === true) { gateClass = 'green'; gateText = 'green'; }
@@ -3289,6 +3318,13 @@ function buildQuotaTierChip(fleet) {
   // chip's severity class tracks the WORST binding pool so an opus-red machine
   // reads red at a glance -- that is the state that triggered an engine demotion.
   if (!present(fleet?.quota_generated_at)) return null;
+  const quotaStale = telemetryStaleLabel(fleet.quota_generated_at);
+  if (quotaStale) {
+    const el = document.createElement('span');
+    el.className = 'wh-quota stale';
+    el.textContent = `quota: STALE (${quotaStale})`;
+    return el;
+  }
   const parts = [];
   const fmt = (label, tier, pct) => {
     if (!present(tier)) return;
