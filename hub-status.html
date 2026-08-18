@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub Status</title>
+<style>
+  :root{
+    --bg:#12101a; --panel:#1c1930; --ink:#e8e4f5; --dim:#8b84a8;
+    --grn:#4ade80; --amb:#fbbf24; --red:#f87171; --blu:#60a5fa;
+    --edge:#3a3457;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:16px 14px 48px;
+    background:var(--bg); color:var(--ink);
+    font-family:"Courier New",ui-monospace,Menlo,Consolas,monospace;
+    font-size:15px; line-height:1.55;
+    image-rendering:pixelated;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+
+  /* pixel box: hard 4px stepped border, no radius, no blur */
+  .px{
+    background:var(--panel); border:0; position:relative;
+    padding:16px 18px; margin:0 0 18px;
+    box-shadow:
+      0 -4px 0 0 var(--edge), 0 4px 0 0 var(--edge),
+      -4px 0 0 0 var(--edge), 4px 0 0 0 var(--edge);
+  }
+  .px.grn{box-shadow:0 -4px 0 0 var(--grn),0 4px 0 0 var(--grn),-4px 0 0 0 var(--grn),4px 0 0 0 var(--grn)}
+  .px.amb{box-shadow:0 -4px 0 0 var(--amb),0 4px 0 0 var(--amb),-4px 0 0 0 var(--amb),4px 0 0 0 var(--amb)}
+  .px.red{box-shadow:0 -4px 0 0 var(--red),0 4px 0 0 var(--red),-4px 0 0 0 var(--red),4px 0 0 0 var(--red)}
+
+  h1{
+    font-size:22px; letter-spacing:3px; margin:0 0 4px; font-weight:700;
+    text-shadow:2px 2px 0 #000, 4px 4px 0 var(--edge);
+  }
+  .sub{color:var(--dim);font-size:13px;margin:0 0 22px}
+  h2{font-size:13px;letter-spacing:2px;color:var(--dim);margin:26px 0 10px;font-weight:700}
+
+  .verdict{font-size:20px;font-weight:700;margin:0 0 10px;line-height:1.35}
+  .verdict.grn{color:var(--grn)} .verdict.amb{color:var(--amb)} .verdict.red{color:var(--red)}
+  .big{font-size:17px;font-weight:700;margin:0 0 6px}
+  .say{margin:0 0 4px}
+  .note{color:var(--dim);font-size:13px;margin:6px 0 0}
+
+  ol.todo{margin:10px 0 0;padding-left:0;list-style:none;counter-reset:t}
+  ol.todo li{
+    counter-increment:t; margin:0 0 14px; padding-left:38px; position:relative;
+  }
+  ol.todo li::before{
+    content:counter(t); position:absolute; left:0; top:1px;
+    width:24px;height:24px;line-height:24px;text-align:center;
+    background:var(--amb); color:#12101a; font-weight:700;
+  }
+  ol.todo b{display:block}
+  ol.todo .why{color:var(--dim);font-size:13px}
+
+  /* machines */
+  .machines{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .m{padding:14px 16px}
+  .m .name{font-size:17px;font-weight:700;letter-spacing:1px;display:flex;align-items:center;gap:10px}
+  .m .state{font-size:13px;font-weight:700;letter-spacing:1px;margin:6px 0 8px}
+  .m .line{font-size:13px;color:var(--dim);margin:2px 0}
+  .m .line b{color:var(--ink);font-weight:400}
+  .lamp{width:14px;height:14px;flex:0 0 14px;display:inline-block}
+  .lamp.grn{background:var(--grn);box-shadow:0 0 0 3px #14532d}
+  .lamp.amb{background:var(--amb);box-shadow:0 0 0 3px #4a2f04}
+  .lamp.red{background:var(--red);box-shadow:0 0 0 3px #4c1111}
+
+  /* little pixel computer */
+  .pc{display:block;margin:0 0 10px}
+
+  table.feed{width:100%;border-collapse:collapse;font-size:13px}
+  table.feed td{padding:5px 8px 5px 0;vertical-align:top;border-bottom:1px solid var(--edge)}
+  table.feed td.t{color:var(--dim);white-space:nowrap;width:1%}
+  .ok{color:var(--grn)} .warn{color:var(--amb)} .bad{color:var(--red)} .idle{color:var(--dim)}
+
+  footer{color:var(--dim);font-size:12px;margin-top:30px;border-top:4px solid var(--edge);padding-top:12px}
+  .stale{color:var(--amb);font-weight:700}
+  a{color:var(--blu)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>&#9635; HUB STATUS</h1>
+  <p class="sub">Your four machines and what they actually did. Plain English, no jargon.</p>
+
+  <div class="px amb" id="todo-box">
+    <div class="verdict amb" id="todo-verdict">Loading&hellip;</div>
+    <div id="todo-body"></div>
+  </div>
+
+  <h2>IS ANYTHING ACTUALLY SHIPPING?</h2>
+  <div class="px" id="ship-box">
+    <div class="big" id="ship-headline">&hellip;</div>
+    <div class="say" id="ship-detail"></div>
+    <p class="note" id="ship-note"></p>
+  </div>
+
+  <h2>THE FOUR MACHINES</h2>
+  <div class="machines" id="machines"></div>
+
+  <h2>THE LAST FEW THINGS THAT HAPPENED</h2>
+  <div class="px"><table class="feed"><tbody id="feed"></tbody></table></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+/* ------------------------------------------------------------------
+   Where the numbers come from.
+
+   Each machine publishes a summary JSON file to one shared GitHub gist
+   after every run. This page reads those files directly in your browser.
+   No server, no database, nothing to pay for, nothing to keep running.
+
+   The "/raw/<filename>" form (no commit SHA) always serves the CURRENT
+   file and is NOT a GitHub API call, so there is no 60-per-hour limit
+   to run into. Verified 2026-08-17.
+
+   If the fetch fails -- opened from disk, offline, gist renamed -- the
+   page falls back to the SNAPSHOT baked in below and says so at the
+   bottom in plain words. It never pretends stale data is live.
+------------------------------------------------------------------- */
+const GIST = "655d02ce43b293cacdf333a301b63bbf";
+const BASE = "https://gist.githubusercontent.com/pmartin1915/" + GIST + "/raw";
+
+const MACHINES = [
+  { id:"perrypc",          name:"Main"       },
+  { id:"perryslenovo",     name:"Laptop"     },
+  { id:"desktop-tojgbg2",  name:"Upstairs"   },
+  { id:"desktop-p7h5aj1",  name:"Downstairs" },
+];
+
+/* A machine is expected to check in about this often. Longer than this
+   with no word means something is wrong -- SILENCE IS A FAILURE, not a
+   blank. This is the whole point: a machine that dies quietly used to
+   look identical to a machine with nothing to do. */
+const EXPECT_HOURS = 6;
+
+const SNAPSHOT = {"perrypc":{"computed_at":"2026-08-17T21:54:34.066Z","last_run_ts":"2026-08-17T21:54:27.162Z","last_run_outcome":"success","last_run_reason":null,"last_project":"wilderness","last_task":"typecheck","consecutive_errors":0,"rotation_total":3,"disabled_projects":[],"last_error_reason":"canary-failed","last_error_ts":"2026-08-17T19:55:26.856Z","last_error_phase":"auto-push","dispatches_today":39,"shipped":{"merged7d":0,"merged30d":13,"autonomous7d":0,"manual7d":0},"feed":[{"ts":"2026-08-17T21:54:27.162Z","project":"wilderness","outcome":"success","line":"wilderness · typecheck · success · typecheck passed · 2m07s"},{"ts":"2026-08-17T21:33:54.173Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 1m34s"},{"ts":"2026-08-17T21:16:06.771Z","project":"frontier","outcome":"auto-push-blocked","line":"frontier · audit · auto-push-blocked (disabled-project)"},{"ts":"2026-08-17T21:16:06.725Z","project":"frontier","outcome":"success","line":"frontier · audit · glm-4.5-flash · success · Audit: 28 finding(s) (incl. high/critical) · 3m47s"},{"ts":"2026-08-17T20:55:59.732Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 3m41s"},{"ts":"2026-08-17T20:14:06.290Z","project":"frontier","outcome":"health-check-pass","line":"frontier · health-check · health-check-pass · 1m46s"},{"ts":"2026-08-17T19:55:26.856Z","project":"sandbox-workflow-enhancement","outcome":"auto-push-blocked","line":"sandbox-workflow-enhancement · research · auto-push-blocked (canary-failed) · 0.0s"},{"ts":"2026-08-17T19:55:26.676Z","project":"sandbox-workflow-enhancement","outcome":"success","line":"sandbox-workflow-enhancement · research · glm-4.5-flash · success · research complete · 3m07s"}],"outcome_rollup":{"success":45,"auto-push-blocked":37,"skipped":177,"audit-truncated":6,"health-check-pass":7,"auto-revived":2,"ok":1},"auto_pull_frozen":false,"diverged_clones":[]},"perryslenovo":{"computed_at":"2026-08-17T21:42:27.862Z","last_run_ts":"2026-08-17T21:42:21.130Z","last_run_outcome":"skipped","last_run_reason":"user-active","last_project":"sandbox-workflow-enhancement","last_task":"research","consecutive_errors":0,"rotation_total":3,"disabled_projects":[{"slug":"frontier","reason":"auto-disabled:no-success-for-2d-as-of-2026-08-06T17:44:49.816Z","since":"2026-08-06T17:44:49.816Z","kind":"auto","probation_attempts":2}],"last_error_reason":"selector-failed","last_error_ts":"2026-08-15T09:02:25.323Z","last_error_phase":"selector","dispatches_today":7,"shipped":{"merged7d":0,"merged30d":15,"autonomous7d":0,"manual7d":0},"feed":[{"ts":"2026-08-17T19:23:08.203Z","project":"sandbox-workflow-enhancement","outcome":"auto-push-failed","line":"sandbox-workflow-enhancement · research · auto-push-failed (git-push-failed)"},{"ts":"2026-08-17T19:23:07.645Z","project":"sandbox-workflow-enhancement","outcome":"success","line":"sandbox-workflow-enhancement · research · glm-4.5-flash · success · research complete · 1m51s"},{"ts":"2026-08-17T19:02:54.393Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 1m39s"},{"ts":"2026-08-17T18:41:16.061Z","project":null,"outcome":"auto-revived","line":"auto-revive-probation · auto-revived"},{"ts":"2026-08-17T18:23:41.761Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 2m25s"},{"ts":"2026-08-17T15:43:47.621Z","project":null,"outcome":"auto-revived","line":"auto-revive-probation · auto-revived"},{"ts":"2026-08-17T09:44:18.009Z","project":"sandbox-workflow-enhancement","outcome":"auto-push-failed","line":"sandbox-workflow-enhancement · self-audit · auto-push-failed (git-push-failed)"},{"ts":"2026-08-17T09:44:17.477Z","project":"sandbox-workflow-enhancement","outcome":"success","line":"sandbox-workflow-enhancement · self-audit · glm-4.5-flash · success · dispatch work completed · 3m01s"}],"outcome_rollup":{"skipped":67,"success":7,"auto-push-failed":5,"auto-revived":2},"auto_pull_frozen":false,"diverged_clones":[]},"desktop-tojgbg2":{"computed_at":"2026-08-17T21:53:54.595Z","last_run_ts":"2026-08-17T21:53:48.213Z","last_run_outcome":"auto-push-blocked","last_run_reason":"disabled-project","last_project":"frontier","last_task":"audit","consecutive_errors":0,"rotation_total":3,"disabled_projects":[{"slug":"sandbox-workflow-enhancement","reason":"auto-disabled:path-missing-as-of-2026-07-28T01:22:12.994Z","since":"2026-07-28T01:22:12.994Z","kind":"auto","probation_attempts":null}],"last_error_reason":"analysis-audit-error: This operation was aborted","last_error_ts":"2026-08-11T18:37:55.741Z","last_error_phase":"complete","dispatches_today":16,"shipped":{"merged7d":0,"merged30d":15,"autonomous7d":0,"manual7d":0},"feed":[{"ts":"2026-08-17T21:53:48.213Z","project":"frontier","outcome":"auto-push-blocked","line":"frontier · audit · auto-push-blocked (disabled-project)"},{"ts":"2026-08-17T21:53:48.172Z","project":"frontier","outcome":"success","line":"frontier · audit · glm-4.5-flash · success · Audit: 28 finding(s) (incl. high/critical) · 1m22s"},{"ts":"2026-08-17T21:34:34.508Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 2m09s"},{"ts":"2026-08-17T20:54:14.613Z","project":"frontier","outcome":"auto-push-blocked","line":"frontier · audit · auto-push-blocked (disabled-project)"},{"ts":"2026-08-17T20:54:14.571Z","project":"frontier","outcome":"success","line":"frontier · audit · glm-4.5-flash · success · Audit: 24 finding(s) (incl. high/critical) · 1m49s"},{"ts":"2026-08-17T20:34:30.821Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 2m06s"},{"ts":"2026-08-17T20:13:09.648Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 43s"},{"ts":"2026-08-17T19:34:46.332Z","project":"wilderness","outcome":"success","line":"wilderness · test · success · test passed · 2m21s"}],"outcome_rollup":{"skipped":125,"success":17,"auto-push-blocked":11,"audit-truncated":12,"health-check-pass":5,"canary-failed":1,"auto-revived":2,"ok":1,"local-task-failed":2,"failed":1,"auto-recovered":1},"auto_pull_frozen":false,"diverged_clones":[]},"desktop-p7h5aj1":{"computed_at":"2026-08-17T00:38:28.009Z","last_run_ts":"2026-08-17T00:38:22.491Z","last_run_outcome":"skipped","last_run_reason":"scaffold-exists","last_project":null,"last_task":null,"consecutive_errors":0,"rotation_total":8,"disabled_projects":[{"slug":"burn-wizard","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"wilderness","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"boardbound","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"frontier","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"medilex","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"worldbuilder","reason":"not-on-this-pc","since":null,"kind":"operator","probation_attempts":null},{"slug":"spec-gauntlet","reason":"auto-disabled:no-success-for-Infinityd-as-of-2026-06-10T23:57:57.178Z","since":"2026-06-10T23:57:57.178Z","kind":"auto","probation_attempts":null}],"last_error_reason":null,"last_error_ts":null,"last_error_phase":null,"dispatches_today":0,"shipped":{"merged7d":0,"merged30d":0,"autonomous7d":0,"manual7d":0},"feed":[{"ts":"2026-08-17T00:17:59.883Z","project":null,"outcome":"auto-revived","line":"auto-revive-probation · auto-revived"}],"outcome_rollup":{"skipped":10,"auto-revived":1},"auto_pull_frozen":false,"diverged_clones":[]},"__taken_at":"2026-08-18T01:21:47.077Z"};
+
+/* ---------- turning field names into English ---------- */
+
+/* What a run outcome actually means for you. */
+const OUTCOME = {
+  "success":            { cls:"ok",   say:"did its job" },
+  "ok":                 { cls:"ok",   say:"did its job" },
+  "health-check-pass":  { cls:"ok",   say:"checked itself over, fine" },
+  "skipped":            { cls:"idle", say:"had nothing new to do" },
+  "auto-push-blocked":  { cls:"warn", say:"did the work but is not allowed to publish it" },
+  "canary-failed":      { cls:"warn", say:"stopped at the safety check, so it published nothing" },
+  "selector-failed":    { cls:"warn", say:"could not decide what to work on" },
+  "audit-truncated":    { cls:"warn", say:"its report got cut off halfway" },
+  "auto-revived":       { cls:"warn", say:"switched a project back on by itself" },
+  "auto-disabled":      { cls:"bad",  say:"switched a project off after too many failures" },
+  "error":              { cls:"bad",  say:"failed" },
+};
+function sayOutcome(o){
+  if(!o) return { cls:"idle", say:"nothing recorded" };
+  if(OUTCOME[o]) return OUTCOME[o];
+  const key = Object.keys(OUTCOME).find(k => String(o).startsWith(k));
+  return key ? OUTCOME[key] : { cls:"warn", say:String(o).replace(/[-_:]/g," ") };
+}
+
+/* Why a project is switched off, in words. */
+function sayDisabled(d){
+  if(!d) return "";
+  if(d.kind === "operator" && d.reason === "not-on-this-pc") return d.slug + " (not on this machine)";
+  if(d.kind === "operator") return d.slug + " (you turned it off on purpose)";
+  if(String(d.reason||"").startsWith("auto-disabled")) {
+    const m = /no-success-for-(\d+)d/.exec(d.reason);
+    return d.slug + (m ? " (switched itself off after " + m[1] + " days with nothing working)"
+                       : " (switched itself off after repeated failures)");
+  }
+  return d.slug;
+}
+
+function agoText(ts){
+  if(!ts) return "never";
+  const mins = (Date.now() - new Date(ts).getTime()) / 60000;
+  if(mins < 1)    return "just now";
+  if(mins < 60)   return Math.round(mins) + " minutes ago";
+  const h = mins/60;
+  if(h < 24)      return (h < 2 ? "1 hour ago" : Math.round(h) + " hours ago");
+  const d = h/24;
+  return (d < 2 ? "yesterday" : Math.round(d) + " days ago");
+}
+function hoursSince(ts){ return ts ? (Date.now() - new Date(ts).getTime())/3600000 : Infinity; }
+
+/* ---------- the actual reading of the data ---------- */
+
+function readMachine(id, name, j){
+  const quietH   = hoursSince(j && j.last_run_ts);
+  const staleH   = hoursSince(j && j.computed_at);
+  const total    = (j && j.rotation_total) || 0;
+  const off      = (j && j.disabled_projects) || [];
+  const enabled  = total - off.length;
+  const outcome  = sayOutcome(j && j.last_run_outcome);
+
+  /* "Switched off" covers two completely different things and lumping them
+     together lies. A project that was never installed on this machine is not a
+     failure; a project that switched ITSELF off after repeated failures is.
+     Only the second kind should ever set off an alarm. */
+  const offOnPurpose = off.filter(d => d.kind === "operator");
+  const offBecauseBroke = off.filter(d => d.kind !== "operator");
+  const couldRun = total - offOnPurpose.length;
+
+  /* A machine can look perfectly healthy while producing nothing you can use:
+     every run "succeeds", and every run is then blocked from publishing. That
+     is the exact shape of "it says it is working and nothing arrives", so it
+     gets called out rather than shown as green. */
+  const recent = (j && j.feed) || [];
+  const blocked = recent.filter(f => String(f.outcome||"").startsWith("auto-push-blocked")).length;
+  const productive = recent.filter(f => f.outcome === "success" || f.outcome === "ok").length;
+
+  let lamp = "grn", state = "WORKING", trouble = null;
+
+  if(!j){
+    lamp="red"; state="NO DATA";
+    trouble = { what:name + " has never reported in", why:"This page could not find its file at all." };
+  } else if(quietH > EXPECT_HOURS){
+    lamp="red"; state="ASLEEP";
+    trouble = {
+      what: name + " has said nothing for " + Math.round(quietH) + " hours",
+      why:  "It should check in every few hours. Silence usually means the machine is off, "
+          + "asleep, or its scheduled task stopped running. Nothing will happen on it until you look."
+    };
+  } else if(enabled <= 0){
+    lamp="red"; state="NOTHING TO DO";
+    trouble = { what:name + " has no projects switched on",
+                why:"It will start up and immediately quit. This is the condition that bricked a machine before." };
+  } else if(enabled === 1 && couldRun > 1){
+    lamp="amb"; state="DOWN TO ONE JOB";
+    trouble = {
+      what: name + " is down to its last working project",
+      why:  "Of the " + couldRun + " projects that live on this machine, " + offBecauseBroke.length
+          + " already switched themselves off after repeated failures. If the last one goes too, "
+          + "the machine has an empty list and stops booting properly."
+    };
+  } else if(blocked > 0 && blocked >= productive){
+    lamp="amb"; state="LOOKS BUSY, SHIPS NOTHING";
+    trouble = {
+      what: name + " is doing work it is not allowed to publish",
+      why:  "Most of what it just did was blocked from being published, so it reports success and "
+          + "you receive nothing. This is the pattern that looks like it is working when it is not."
+    };
+  } else if(outcome.cls === "warn" || outcome.cls === "bad"){
+    lamp="amb"; state="BUSY BUT STUCK";
+  }
+
+  return { id, name, j, lamp, state, outcome, enabled, total, off,
+           offOnPurpose, offBecauseBroke, couldRun, quietH, staleH, trouble };
+}
+
+function render(data, live, fetchNote){
+  const rows = MACHINES.map(m => readMachine(m.id, m.name, data[m.id]));
+
+  /* ---- shipping: the number that matters ---- */
+  let merged7 = 0, auto7 = 0, merged30 = 0, runs24 = 0, seen = false;
+  for(const r of rows){
+    const s = r.j && r.j.shipped;
+    if(s){ seen = true; merged7 = Math.max(merged7, s.merged7d||0);
+           auto7 = Math.max(auto7, s.autonomous7d||0);
+           merged30 = Math.max(merged30, s.merged30d||0); }
+    const roll = r.j && r.j.outcome_rollup;
+    if(roll) runs24 += Object.values(roll).reduce((a,b)=>a+b,0);
+  }
+  const shipBox = document.getElementById("ship-box");
+  const hl = document.getElementById("ship-headline");
+  if(!seen){
+    hl.textContent = "Can't tell.";
+    document.getElementById("ship-detail").textContent = "No shipping numbers in the data.";
+  } else if(merged7 === 0){
+    shipBox.className = "px red";
+    hl.className = "big bad";
+    hl.textContent = "No. Nothing has shipped in the last 7 days.";
+    document.getElementById("ship-detail").innerHTML =
+      "The machines ran <b>" + runs24.toLocaleString() + "</b> times in the last 24 hours. "
+      + "None of it turned into anything you received.";
+    document.getElementById("ship-note").textContent =
+      "Over the last 30 days " + merged30 + " changes were merged, but " + auto7 + " of this week's "
+      + "were done by the machines on their own — so that 30-day number is mostly your own work, not theirs.";
+  } else {
+    shipBox.className = "px grn";
+    hl.className = "big ok";
+    hl.textContent = "Yes — " + merged7 + " change" + (merged7===1?"":"s") + " shipped this week.";
+    document.getElementById("ship-detail").textContent =
+      auto7 + " of those the machines did entirely on their own.";
+  }
+
+  /* ---- do you need to do anything ---- */
+  const jobs = rows.filter(r => r.trouble).map(r => r.trouble);
+  if(merged7 === 0 && seen){
+    jobs.push({
+      what: "Decide whether the fleet running with nothing to show is acceptable",
+      why:  "Every machine is alive and busy, and the output for the week is zero. "
+          + "That is a decision to make, not a bug to fix — nothing here is broken in a way code can repair."
+    });
+  }
+  const box = document.getElementById("todo-box");
+  const verdict = document.getElementById("todo-verdict");
+  const body = document.getElementById("todo-body");
+  if(jobs.length === 0){
+    box.className = "px grn"; verdict.className = "verdict grn";
+    verdict.textContent = "NO — nothing needs you right now.";
+    body.innerHTML = "<p class='note'>Everything is checking in on time and something shipped this week.</p>";
+  } else {
+    const red = rows.some(r => r.lamp === "red");
+    box.className = "px " + (red ? "red" : "amb");
+    verdict.className = "verdict " + (red ? "red" : "amb");
+    verdict.textContent = "YES — " + jobs.length + " thing" + (jobs.length===1?"":"s") + " need" + (jobs.length===1?"s":"") + " you.";
+    body.innerHTML = "<ol class='todo'>" + jobs.map(j =>
+      "<li><b>" + j.what + "</b><span class='why'>" + j.why + "</span></li>").join("") + "</ol>";
+  }
+
+  /* ---- the machines ---- */
+  document.getElementById("machines").innerHTML = rows.map(r => {
+    /* Count against what COULD run here, and mention the not-installed ones as
+       an aside — "1 of 8" is alarming and wrong when 6 were never on this box. */
+    let jobs = "<b>" + r.enabled + " of " + r.couldRun + "</b>";
+    if(r.offOnPurpose.length) jobs += " <span style='opacity:.7'>(" + r.offOnPurpose.length
+      + " more aren't installed here)</span>";
+    const broke = r.offBecauseBroke.length
+      ? "<div class='line'>Switched itself off after failing:<br>&nbsp;&nbsp;&nbsp;&nbsp;"
+        + r.offBecauseBroke.map(sayDisabled).join("<br>&nbsp;&nbsp;&nbsp;&nbsp;") + "</div>"
+      : "";
+    return "<div class='px m " + r.lamp + "'>"
+      + "<div class='name'><span class='lamp " + r.lamp + "'></span>" + r.name + "</div>"
+      + "<div class='state " + (r.lamp==="grn"?"ok":r.lamp==="amb"?"warn":"bad") + "'>" + r.state + "</div>"
+      + "<div class='line'>Last heard from: <b>" + agoText(r.j && r.j.last_run_ts) + "</b></div>"
+      + "<div class='line'>Then it: <b>" + r.outcome.say + "</b>"
+        + (r.j && r.j.last_project ? " on " + r.j.last_project : "") + "</div>"
+      + "<div class='line'>Jobs running here: " + jobs + "</div>"
+      + broke
+      + "</div>";
+  }).join("");
+
+  /* ---- recent events ---- */
+  const events = [];
+  for(const r of rows){
+    for(const f of (r.j && r.j.feed) || []) events.push({ ts:f.ts, who:r.name, project:f.project, outcome:f.outcome });
+  }
+  events.sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  document.getElementById("feed").innerHTML = events.slice(0,14).map(e => {
+    const o = sayOutcome(e.outcome);
+    return "<tr><td class='t'>" + agoText(e.ts) + "</td><td><b>" + e.who + "</b> "
+      + (e.project ? "on " + e.project + " " : "") + "<span class='" + o.cls + "'>" + o.say + "</span></td></tr>";
+  }).join("") || "<tr><td>Nothing recorded.</td></tr>";
+
+  /* ---- honesty footer ---- */
+  const oldest = Math.max(...rows.map(r => isFinite(r.staleH) ? r.staleH : 0));
+  const foot = document.getElementById("foot");
+  let msg;
+  if(!live){
+    msg = "<span class='stale'>These numbers are frozen, not live.</span> " + fetchNote
+        + " The snapshot was taken " + agoText(SNAPSHOT.__taken_at) + ".";
+  } else if(oldest > 24){
+    msg = "<span class='stale'>Careful — the slowest machine's file is " + Math.round(oldest)
+        + " hours old,</span> so its part of this page is out of date.";
+  } else {
+    msg = "Live. Read straight from the gist just now.";
+  }
+  foot.innerHTML = msg + "<br>Reload the page to refresh. Nothing here runs in the background.";
+}
+
+/* ---------- go ---------- */
+(async function(){
+  const data = {}; let ok = 0;
+  await Promise.all(MACHINES.map(async m => {
+    try{
+      const res = await fetch(BASE + "/fleet-" + m.id + ".json", { cache:"no-store" });
+      if(!res.ok) throw new Error(res.status);
+      const j = await res.json();
+      data[m.id] = {
+        computed_at:j.computed_at, last_run_ts:j.last_run_ts, last_run_outcome:j.last_run_outcome,
+        last_project:j.last_project, rotation_total:j.rotation_total,
+        disabled_projects:j.disabled_projects, consecutive_errors:j.consecutive_errors,
+        shipped:j.control_room && j.control_room.shipped ? j.control_room.shipped.totals : null,
+        feed:(j.control_room && j.control_room.feed || []).slice(0,8),
+        outcome_rollup:j.outcome_rollup ? j.outcome_rollup.last_24h : null,
+      };
+      ok++;
+    }catch(e){ /* fall through to snapshot */ }
+  }));
+
+  if(ok === MACHINES.length){
+    render(data, true, "");
+  }else{
+    const why = ok === 0
+      ? "The live read failed completely — usually that means you opened this file straight from disk, or you are offline."
+      : "Only " + ok + " of " + MACHINES.length + " machines could be read live, so the whole page fell back to the last snapshot rather than mixing fresh and stale numbers.";
+    render(SNAPSHOT, false, why);
+  }
+})();
+</script>
+</body>
+</html>
